@@ -11,7 +11,7 @@ class Settings:
     gateway_api_key: str = "not-set"
     model_name: str = "stub"
     horizon_days: int = 365
-    max_concurrency: int = 4
+    max_concurrency: int = 2
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":

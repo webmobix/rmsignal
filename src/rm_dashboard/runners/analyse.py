@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     if not Path(settings.db_path).is_file():
         print(f"error: database not found: {settings.db_path} (create it with `rm-dashboard-seed --db {settings.db_path}`)", file=sys.stderr)
         return 2
+
     ids = [c.strip() for c in args.clients.split(",") if c.strip()] if args.clients else None
     with open_registry(settings) as registry:
         result = run_batch(registry, as_of=args.as_of, out_dir=Path(args.out), client_ids=ids, settings=settings,
