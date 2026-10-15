@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -52,6 +53,8 @@ class ToolContext:
     peers: dict[str, Any] = field(default_factory=dict)  # name -> peer agent client (``ask`` method)
     run: Any = None
     agent: str = ""
+    reports_dir: Path | None = None
+    store: Any = None  # the run's EvidenceStore, filled in per call by the toolbox
 
 
 @dataclass(frozen=True)

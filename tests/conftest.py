@@ -44,19 +44,43 @@ def registry(pit_repo):
     return ToolRegistry(ToolContext(pit_repo))
 
 
+@pytest.fixture(scope="session")
+def outlook_dir(registry, tmp_path_factory):
+    """Reports folder holding the market and instrument outlooks of 2026-08-26 (stub model)."""
+    from datetime import date
+
+    from rm_dashboard.agents import StubChatModel
+    from rm_dashboard.runners.outlook import run_outlook
+
+    d = tmp_path_factory.mktemp("outlooks")
+    run_outlook(registry, as_of=date(2026, 8, 26), reports_dir=d, models=lambda role: StubChatModel(role=role))
+    return d
+
+
+@pytest.fixture(scope="session")
+def outlook_registry(registry, outlook_dir):
+    """The tool registry pointed at ``outlook_dir``: client analysts find the outlooks."""
+    import dataclasses
+
+    from rm_dashboard.tools import ToolRegistry
+
+    return ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=outlook_dir))
+
+
 @pytest.fixture
-def make_scope(registry):
-    """Factory for a fresh run scope on the seeded data."""
+def make_scope(registry, outlook_registry):
+    """Factory for a fresh run scope on the seeded data. ``outlooks=True`` makes the persisted outlooks available."""
     from datetime import date
 
     from rm_dashboard.agents import RunScope
     from rm_dashboard.agents.scope import register_people
     from rm_dashboard.policy import RunContext, Pseudonymiser
 
-    def make(as_of=date(2026, 8, 26), engine=None, subject="CL-0001", register_names=True):
+    def make(as_of=date(2026, 8, 26), engine=None, subject="CL-0001", register_names=True, outlooks=False):
+        reg = outlook_registry if outlooks else registry
         run = RunContext(subject, as_of, **({"engine": engine} if engine else {}))
         if register_names:
-            register_people(run, registry.ctx.repo, date(2026, 12, 31))
-        return RunScope(run=run, registry=registry)
+            register_people(run, reg.ctx.repo, date(2026, 12, 31))
+        return RunScope(run=run, registry=reg)
 
     return make

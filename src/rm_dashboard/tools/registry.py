@@ -11,6 +11,7 @@ from rm_dashboard.domain import ToolResult
 
 from .analytics_tools import ANALYTICS_TOOLS
 from .domain_tools import DOMAIN_TOOLS
+from .outlook_tools import OUTLOOK_TOOLS
 from .peer_tools import PEER_TOOLS
 from .spec import ToolContext, ToolSpec
 
@@ -58,7 +59,7 @@ class Refusal:
 class ToolRegistry:
     def __init__(self, ctx: ToolContext, specs: Iterable[ToolSpec] | None = None):
         self.ctx = ctx
-        self.specs: dict[str, ToolSpec] = {s.name: s for s in (specs or [*DOMAIN_TOOLS, *ANALYTICS_TOOLS, *PEER_TOOLS])}
+        self.specs: dict[str, ToolSpec] = {s.name: s for s in (specs or [*DOMAIN_TOOLS, *ANALYTICS_TOOLS, *PEER_TOOLS, *OUTLOOK_TOOLS])}
 
     def names(self) -> list[str]:
         return sorted(self.specs)
@@ -101,7 +102,7 @@ class Toolbox:
                 self.refusals.append(Refusal(self.agent, name, e.reason))
                 raise
         try:
-            ctx = dataclasses.replace(self.registry.ctx, run=self.run, agent=self.agent)
+            ctx = dataclasses.replace(self.registry.ctx, run=self.run, agent=self.agent, store=self.store)
             result = spec.fn(ctx, params)
         except Exception as e:
             if self.observer:

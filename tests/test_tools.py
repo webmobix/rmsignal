@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from rm_dashboard.tools import ALLOWLISTS, EvidenceStore, ToolRefused
 from rm_dashboard.tools.analytics_tools import ANALYTICS_TOOLS
 from rm_dashboard.tools.domain_tools import DOMAIN_TOOLS
+from rm_dashboard.tools.outlook_tools import OUTLOOK_TOOLS
 from rm_dashboard.tools.peer_tools import PEER_TOOLS
 
 AS_OF = "2026-08-26"
@@ -89,13 +90,24 @@ def test_waiver_note_does_not_change_calculation(registry):
     assert a.evidence_id == call(registry, "analytics.mandate_drift", portfolio_id="PF-0001").evidence_id
 
 
-def test_news_unavailable_returns_no_data_and_events(registry):
+def test_news_serves_event_log(registry):
     n = call(registry, "news.list", as_of="2026-03-31")
-    assert n.status == "no_data" and "news" in n.reason
-    assert n.data["news"] == [] and n.data["curated_events"]
-    assert all(e["event_date"] <= date(2026, 3, 31) for e in n.data["curated_events"])
+    assert n.status == "ok" and n.data["source"] == "event_log"
+    assert n.data["news"] and all(i["source"] == "event_log" for i in n.data["news"])
+    assert all(i["event_date"] <= date(2026, 3, 31) for i in n.data["news"])
     ev = call(registry, "events.list", as_of="2026-03-31")
-    assert ev.status == "ok" and len(ev.data) == len(n.data["curated_events"])
+    assert ev.status == "ok" and len(ev.data) == len(n.data["news"])
+
+
+def test_news_before_first_event_is_no_data(registry):
+    n = call(registry, "news.list", as_of="2025-12-30")
+    assert n.status in ("no_data", "insufficient_data") and n.data["news"] == []
+
+
+def test_news_has_no_look_ahead(registry):
+    n = call(registry, "news.list", as_of="2026-08-01")
+    assert all(i["event_date"] <= date(2026, 8, 1) for i in n.data["news"])
+    assert not any(i["event_date"] == date(2026, 8, 5) for i in n.data["news"])
 
 
 def test_historical_client_tagged_current_only(registry):
@@ -230,6 +242,6 @@ def test_no_tool_accepts_path_or_sql(registry):
 
 
 def test_tool_inventory_is_the_defined_set(registry):
-    assert set(registry.names()) == {s.name for s in DOMAIN_TOOLS + ANALYTICS_TOOLS + PEER_TOOLS}
+    assert set(registry.names()) == {s.name for s in DOMAIN_TOOLS + ANALYTICS_TOOLS + PEER_TOOLS + OUTLOOK_TOOLS}
     for agent, names in ALLOWLISTS.items():
         assert {s.name for s in registry.toolbox(agent, names).specs()} == set(names)

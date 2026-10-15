@@ -150,7 +150,7 @@ def test_audit_lists_original_requester_across_hops(peer_registry, mock_kyc):
     recs = rt.audit.records
     assert recs and all(r.requester_chain[:2] == ("rm-priscilla", "workbench") for r in recs)
     agents = {r.agent for r in recs}
-    assert {"relationship_analyst", "portfolio_analyst", "instrument_analyst"} <= agents
+    assert {"relationship_analyst", "portfolio_analyst"} <= agents and "instrument_analyst" not in agents
     inbound = [r for r in recs if r.kind == "a2a_call" and r.detail["direction"] == "inbound"]
     outbound = [r for r in recs if r.kind == "a2a_call" and r.detail["direction"] == "outbound"]
     assert inbound and outbound

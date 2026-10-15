@@ -103,15 +103,15 @@ def test_same_run_same_evidence_ids(make_scope):
 
 
 # ---- 7.3 portfolio analyst delegates ------------------------------------------------------
-def test_portfolio_report_contains_delegated_evidence(make_scope):
-    r, scope, models = run_role(make_scope, "portfolio_analyst", "PF-0001")
-    assert len(r.children) == 2 and all(c.agent == "instrument_analyst" for c in r.children)
-    child_ids = {i for c in r.children for i in c.evidence_ids}
-    assert child_ids and child_ids <= set(r.evidence_ids)
+def test_portfolio_reads_outlooks_instead_of_delegating(make_scope):
+    r, scope, models = run_role(make_scope, "portfolio_analyst", "PF-0001", outlooks=True)
+    assert r.children == [] and "instrument_analyst" not in models.made
+    tools = {x.computation.tool for x in scope.store.results.values()}
+    assert {"outlook.market", "outlook.instrument"} <= tools
     cited = {i for f in r.findings for i in f.evidence_ids}
-    assert cited & child_ids
-    assert any(f.claim.startswith("Instrument analysis of") for f in r.findings)
-    assert len(models.made["instrument_analyst"]) == 2
+    outlook_ids = {x.evidence_id for x in scope.store.results.values() if x.computation.tool.startswith("outlook.")}
+    assert cited & outlook_ids and any(f.claim.startswith("The bank's view of") for f in r.findings)
+    assert any(f.code == "house_view" for f in r.flags)
 
 
 def test_custody_portfolio_not_measured_against_mandate(make_scope):
@@ -137,11 +137,12 @@ def test_mandate_breach_reported_from_tool_figures(make_scope):
 
 # ---- 7.4 relationship analyst -------------------------------------------------------------
 def test_relationship_chain_and_honest_uncertainty(make_scope):
-    r, scope, _ = run_role(make_scope, "relationship_analyst", "CL-0001")
+    r, scope, _ = run_role(make_scope, "relationship_analyst", "CL-0001", outlooks=True)
     assert [c.agent for c in r.children] == ["portfolio_analyst", "portfolio_analyst"]
-    assert all(g.children for g in r.children) and {gc.agent for c in r.children for gc in c.children} == {"instrument_analyst"}
-    deep = {i for c in r.children for gc in c.children for i in gc.evidence_ids}
+    assert all(not g.children for g in r.children)
+    deep = {i for c in r.children for i in c.evidence_ids}
     assert deep <= set(r.evidence_ids)
+    assert any(f.claim.startswith("The bank's market view as of") for f in r.findings)
     assert any("Related-party data was unavailable" in f.claim for f in r.findings)
     assert {g.subject for g in r.gaps} >= {"relationships.list", "persons.list"} and r.status == "partial"
     text = " ".join(f.claim for f in r.findings)
@@ -217,8 +218,8 @@ def test_model_failure_still_yields_report(make_scope):
 
 
 def test_child_failure_does_not_lose_parent_report(make_scope):
-    models = Models(modes={"instrument_analyst": "raise"})
-    r, *_ = run_role(make_scope, "portfolio_analyst", "PF-0001", models)
+    models = Models(modes={"portfolio_analyst": "raise"})
+    r, *_ = run_role(make_scope, "relationship_analyst", "CL-0001", models, outlooks=True)
     assert r.status == "partial" and r.findings and len(r.children) == 2
     assert all(c.status == "partial" and any(g.kind == "agent_error" for g in c.gaps) for c in r.children)
 
@@ -247,16 +248,21 @@ def test_entitlement_denied_delivers_report(make_scope):
 
 # ---- policy wiring through a real run (group 6 re-check) ----------------------------------
 def test_policy_and_audit_wired_through_run(make_scope):
-    r, scope, _ = run_role(make_scope, "relationship_analyst", "CL-0001")
+    r, scope, _ = run_role(make_scope, "relationship_analyst", "CL-0001", outlooks=True)
     got = {d.checkpoint for d in r.policy_decisions}
     assert got >= {"request_entitlement", "tool_authorisation", "freshness_pit", "pii_minimisation", "suitability_mandate",
                    "evidence_provenance", "compliance_content", "human_approval"}
     assert all(d.mock for d in r.policy_decisions)
     recs = scope.run.audit.for_run(scope.run.run_id)
     tool_calls = [x for x in recs if x.kind == "tool_call"]
-    assert len(tool_calls) == len({i for i in scope.store.results}) or len(tool_calls) >= len(scope.store.results)
-    assert {x.agent for x in tool_calls} == {"relationship_analyst", "portfolio_analyst", "instrument_analyst"}
-    chains = {x.requester_chain for x in recs if x.agent == "instrument_analyst"}
+    called = {i for x in tool_calls for i in x.evidence_ids}
+    assert called <= set(scope.store.results)
+    # whatever else is in the store was made resolvable by an outlook tool: it is the evidence behind the outlooks
+    extra = {scope.store.get(i).computation.tool for i in set(scope.store.results) - called}
+    assert extra and extra <= {"instruments.context", "events.relevant", "outlook.market", "outlook.previous_market",
+                               "outlook.previous_instrument", "analytics.market_trend", "news.list"}
+    assert {x.agent for x in tool_calls} == {"relationship_analyst", "portfolio_analyst"}
+    chains = {x.requester_chain for x in recs if x.agent == "portfolio_analyst"}
     assert chains and all(c[0] == "user" for c in chains)
     assert [x.seq for x in recs] == sorted(x.seq for x in recs) and len({x.seq for x in recs}) == len(recs)
 
@@ -372,3 +378,30 @@ def test_summarizer_that_bypasses_privacy_is_replaced(make_scope, monkeypatch):
     run_role(make_scope, "instrument_analyst", "SYN-EQ-0001")
     named = [m for m in seen["mw"] if m.name == "SummarizationMiddleware"]
     assert len(named) == 1 and isinstance(named[0], NoSummarizationMiddleware)
+
+
+# ---- events as news ----------------------------------------------------------------------
+def _news_run(make_scope):
+    from rm_dashboard.agents.analyst import assemble_report
+
+    scope = make_scope(subject="SYN-EQ-0001")
+    spec = ANALYSTS["instrument_analyst"]
+    tb = scope.registry.toolbox(spec.name, spec.allowlist, store=scope.store, run=scope.run)
+    news = tb.call("news.list", {"as_of": AS_OF.isoformat()})
+    return spec, scope, tb, news, assemble_report
+
+
+def test_reading_news_records_no_news_gap(make_scope):
+    spec, scope, tb, news, assemble_report = _news_run(make_scope)
+    assert news.status == "ok"
+    text = json.dumps({"summary": "Energy risk premium re-widened.", "findings": [
+        {"claim": "A naval blockade was reimposed on 2026-08-05.", "confidence": "high", "evidence_ids": [news.evidence_id]}]})
+    report = assemble_report(spec, "SYN-EQ-0001", scope, tb.produced, text, top_level=False)
+    assert report.findings and not [g for g in report.gaps if g.subject == "news.list" or g.kind == "no_data"]
+
+
+def test_finding_citing_event_keeps_figure_from_its_description(make_scope):
+    _, scope, tb, news, _ = _news_run(make_scope)
+    out = guard_output([{"claim": "Brent peaked at approximately USD 114 per barrel in May.", "confidence": "high",
+                         "evidence_ids": [news.evidence_id]}], "", scope.store, AS_OF)
+    assert len(out.findings) == 1 and not out.gaps

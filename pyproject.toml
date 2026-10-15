@@ -26,6 +26,7 @@ rm-dashboard-analyse = "rm_dashboard.runners.analyse:main"
 rm-dashboard-reconcile = "rm_dashboard.runners.reconcile:main"
 rm-dashboard-actions = "rm_dashboard.runners.actions:main"
 rm-dashboard-overview = "rm_dashboard.runners.overview:main"
+rm-dashboard-outlook = "rm_dashboard.runners.outlook:main"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]

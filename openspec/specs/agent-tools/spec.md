@@ -13,9 +13,17 @@ The system SHALL provide tools for relationships, persons, clients, portfolios, 
 - **WHEN** the positions tool is called for a portfolio with `as_of` 2026-06-30
 - **THEN** positions of the 2026-06-30 snapshot are returned with sources
 
+#### Scenario: News from the event log
+- **WHEN** the news tool is called and events dated on or before `as_of` exist
+- **THEN** it returns those events as news items with date, type, region, description, transmission, severity and the source name `event_log`, with status `ok`
+
 #### Scenario: News unavailable
-- **WHEN** the news tool is called and no news source exists
-- **THEN** it returns `no_data` and, separately, curated events dated on or before `as_of`
+- **WHEN** the news tool is called and no event is dated on or before `as_of`
+- **THEN** it returns `no_data` with a reason stating that no news exists up to that date
+
+#### Scenario: No look-ahead in news
+- **WHEN** an event is dated 2026-08-05 and the news tool is called with `as_of` 2026-08-01
+- **THEN** that event is not returned
 
 ### Requirement: Analytics tools
 The system SHALL expose each deterministic calculation as a tool that fetches its own inputs for the given scope and `as_of`, so agents pass identifiers, not numbers.
@@ -44,3 +52,22 @@ RM notes SHALL be returned as dated, quoted text with note id; values derived fr
 #### Scenario: Waiver mention
 - **WHEN** a note mentions a waiver
 - **THEN** the note is returned as quoted evidence and no breach calculation changes because of it
+
+### Requirement: Outlook read tools
+The system SHALL provide read-only tools that return the persisted market outlook and the persisted outlook of one instrument for an `as_of`, each returning the evidence envelope with the outlook's effective date, its source file, and a house-view quality flag, and each making the evidence cited by the outlook resolvable in the run. The tools SHALL NOT start an outlook run and SHALL NOT accept a file path.
+
+#### Scenario: Instrument outlook returned
+- **WHEN** the instrument outlook tool is called for an instrument with an outlook for the as_of
+- **THEN** the view, drivers and risks are returned with their evidence ids, the source file and a house-view flag
+
+#### Scenario: No outlook
+- **WHEN** the tool is called and no outlook exists on or before the as_of
+- **THEN** it returns `no_data` with a reason naming the missing outlook
+
+#### Scenario: Look-ahead refused
+- **WHEN** only an outlook dated after the as_of exists
+- **THEN** it is not returned
+
+#### Scenario: Evidence resolvable
+- **WHEN** an agent cites an evidence id listed in a returned outlook's drivers
+- **THEN** the citation resolves in the run and the number guard can check figures against it

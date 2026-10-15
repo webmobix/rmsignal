@@ -1,12 +1,17 @@
 # Agents
 
-Three analysts (the Relationship Analyst is the RM's view of one client; it does not infer other persons), each a Deep Agents graph (LangGraph underneath) with a narrow tool allow-list:
+Client analysis is done by two analysts (the Relationship Analyst is the RM's view of one client; it does not infer other persons), each a Deep Agents graph (LangGraph underneath) with a narrow tool allow-list:
 
 ```
-Relationship Analyst  --task-->  Portfolio Analyst  --task-->  Instrument Analyst
- client, concentration,           composition, mandate bands,     reference data, price path,
- liquidity, credit, notes         P&L, change                     events, market context
+Relationship Analyst  --task-->  Portfolio Analyst  --reads-->  instrument outlooks (once per date, shared)
+ client, concentration,           composition, mandate bands,    market outlook
+ liquidity, credit, notes,        P&L, change, the bank's view
+ the market outlook               of its largest positions
 ```
+
+The Portfolio Analyst no longer delegates to an Instrument Analyst: what is known about an instrument is written once per
+date by the outlook stage (see *Instrument outlook* below) and read by every client analysis. The `instrument_analyst`
+role still exists for interactive sessions and A2A.
 
 Code: `rm_dashboard.agents` (`analyst.py` builds, runs and assembles; `stubplans.py` scripts the test model).
 
@@ -21,6 +26,8 @@ Code: `rm_dashboard.agents` (`analyst.py` builds, runs and assembles; `stubplans
    allow-list plus `task`; Deep Agents' filesystem, planning and general-purpose tools are never shown or
    executed), `PrivacyMiddleware` (every model call passes the PII checkpoint and the pseudonymiser, tool
    results included), and one `CompiledSubAgent` per delegate that runs the child analyst through the same pipeline.
+   Events and news from tools are treated as established facts: used and cited as reasons, weighted by severity. The
+   curated event log is the MVP news source (`news.list`); an external feed can later be added behind the same tool.
 4. The model's final answer is JSON: a summary and findings (`claim`, `confidence`, `evidence_ids`).
 5. Deterministic code takes over: the **output guard** drops any finding that cites evidence not produced in this
    run or contains a number absent from the cited results (tolerance: 0.5% relative or the displayed rounding;
@@ -30,6 +37,27 @@ Code: `rm_dashboard.agents` (`analyst.py` builds, runs and assembles; `stubplans
    assembly checkpoints run; pseudonyms are restored last.
 6. Whatever goes wrong inside (tool exception, policy denial, model failure, unparsable output), a `Report` is returned
    with the failure as a gap.
+
+## Outlooks in the client analysis
+
+The outlook stage runs first; the client analysts only read its files:
+
+```
+rm-dashboard-outlook -> rm-dashboard-analyse -> rm-dashboard-reconcile -> rm-dashboard-actions -> rm-dashboard-overview
+```
+
+- **Tools.** `outlook.market` (Relationship and Portfolio Analyst) and `outlook.instrument` (Portfolio Analyst) are
+  read-only: they never start an outlook run and accept no path. They return the latest outlook **not after the run's
+  `as_of`** (a later one is never used) with the date it is effective from; an older one carries a `stale_outlook` flag.
+- **Evidence continuity.** The tool result carries the view, drivers and risks, and the evidence the outlook cites is
+  made resolvable in the run (same ids), so a finding can cite the outlook result or the reason behind it, and the output
+  guard still checks every figure.
+- **The bank's view, not a fact.** Every outlook result carries a `house_view` flag, which reaches the report through the
+  evidence a finding cites. Findings state it as "the bank's view as of <date>" with direction, horizon and confidence.
+- **Missing outlook.** `no_data` with the instrument named and a pointer to the command; the report is `partial` with one
+  gap per missing outlook and states no forward-looking view for it.
+- **No effect on actions.** The importance rubric reads only structured evidence (KYC, LTV, liquidity, mandate,
+  concentration), so an outlook can never raise an action's importance.
 
 ## Note reconciliation
 
@@ -108,7 +136,8 @@ linked. It is mostly code; the only model call is an optional short briefing.
 **Pipeline** (each stage reads the files of the one before, for one `as_of`):
 
 ```sh
-uv run rm-dashboard-analyse   --as-of 2026-08-26 --db rm.db --out reports      # <client>.json, evidence/
+uv run rm-dashboard-outlook   --as-of 2026-08-26 --db rm.db --reports-dir reports   # outlook/market.json, outlook/instruments/
+uv run rm-dashboard-analyse   --as-of 2026-08-26 --db rm.db --out reports      # <client>.json, evidence/ (reads the outlooks)
 uv run rm-dashboard-reconcile --as-of 2026-08-26 --db rm.db                     # reconciliation/<client>.json
 uv run rm-dashboard-actions   --as-of 2026-08-26 --db rm.db                     # actions/<client>.json
 uv run rm-dashboard-overview  --as-of 2026-08-26 --db rm.db                     # overview/<rm_id>.json
@@ -132,6 +161,82 @@ uv run rm-dashboard-overview  --as-of 2026-08-26 --db rm.db                     
 - **Briefing (optional):** one model call over the top 20 actions with pseudonymised names. Figures must appear in the
   actions; themes must group at least two existing action ids. A rejected, failed or denied briefing leaves the actions
   and order untouched and marks the overview `partial`; the model cannot add, drop or reorder actions.
+
+## Market outlook
+
+The bank's house view of the market: where markets are heading and why, independent of any client or portfolio. One
+agent (`outlook_analyst`, a Deep Agents graph; for the market it has five tools: `market.history`, `analytics.market_trend`, `events.list`,
+`news.list`, `outlook.previous_market`) writes it once per `as_of`; code then decides what the views may rest on.
+
+- **Contract** (`outlook/contracts.py`): `MarketOutlook` with a `View` for `overall` and for every market category in the
+  data (`equity`, `rates`, `fx`, `commodities`, `volatility`). A view has `direction` (`positive`, `neutral`, `negative`),
+  `horizon` (`1m`, `3m`, `6m`; default `3m`), `confidence`, a rationale, `drivers` and `risks` (a claim, the evidence ids it
+  rests on and the events it names by `event_id`), `would_change_if` and a `change`. There is no numeric forecast field.
+- **Events are the reasons.** Events and news are treated as established facts. `events.list` and `news.list` give every
+  event a stable `event_id` (`EVT-<date>-<n>`); a driver names the events it rests on in `event_refs` and code copies the
+  evidence ids of the tool results that returned them. High and Severe events in the window since the previous outlook that
+  no view cites are listed in `unaddressed_events` (informational).
+- **Changes only with new data.** Each outlook records `inputs` (effective market snapshot date, latest event date, event
+  count). When they equal the previous outlook's, the views are carried forward without a model call (`carried_forward_from`,
+  every view `unchanged`). Otherwise a new outlook is written and each view says `new`, `unchanged`, `upgraded` or
+  `downgraded` against the previous one. Earlier outlooks stay on disk as the reference; only an outlook with a strictly
+  earlier `as_of` is ever used as previous (no look-ahead, so a past date can be rebuilt after later ones exist).
+- **The model proposes, code decides** (`outlook/guard.py`): values must come from the closed sets, otherwise the view is
+  removed; every driver and risk must cite evidence produced in this run (not the previous outlook, not another date) and
+  each figure must exist in the cited evidence, otherwise it is removed; a rationale or `would_change_if` with an
+  unsupported figure is blanked; the change kind and previous direction are derived by code, and a direction change must
+  cite evidence newer than the previous outlook (a later event or a later market snapshot), otherwise the previous direction
+  is kept and a gap records it; confidence is capped at `medium` for a view that cites no event and at `low` when the
+  market history is too short for a trend; a segment without a valid view keeps its previous view (gap) or is a gap.
+- **Always delivered.** Model failure, unparsable output, a policy denial or missing data give an outlook with a gap
+  (`partial`, or `insufficient_data` without market data), with the previous views carried forward when there are any.
+
+```sh
+uv run rm-dashboard-outlook --as-of 2026-08-26 --db rm.db --reports-dir reports   # [--force] regenerates without new data
+```
+
+Output: `reports/<as_of>/outlook/market.json`, `evidence/market.json`, `summary.json` and `audit.jsonl`. Running the same
+date again with the same inputs changes nothing.
+
+## Instrument outlook
+
+The same agent, with a different prompt and a narrower tool set (`instruments.context`, `events.relevant`, `outlook.market`,
+`outlook.previous_instrument`; the market-only tools are refused and the other way round), writes the house view of one
+instrument: where it stands against its peers and the market and where it is heading. It is independent of clients and
+portfolios and is computed **once per instrument and date**; every client analysis reads the same file.
+
+- **Which instruments.** Every instrument held in any portfolio at the snapshot effective at `as_of`, or the ones named with
+  `--instruments`. An instrument held nowhere gets no outlook; one without a price at `as_of` is `insufficient_data` without a
+  model call.
+- **Context, computed by code.** `instruments.context` returns the reference data, the price path with percent changes, the
+  peers (same sector, or the same sub-asset class when the sector is generic, region first, at most 8) with the group average
+  and the relative performance in percentage points, and which risk statistics the history allows. `events.relevant` offers
+  candidate events with what each matched on: a regional event matches an instrument of that region, any event matches when a
+  word of its transmission appears in the instrument's sector, asset class, sub-asset class, name or underlying reference.
+  It is lexical and says so; the model picks the events that really bear on the instrument and cites them by `event_id`.
+  The market segments that bear on the instrument (`overall`, its asset class's segment, `fx` for a non-USD instrument) are
+  copied from the market outlook by code into `market_context`; the model does not write them.
+- **Contract** (`InstrumentOutlook`): the instrument, `price_path`, `unavailable_statistics`, `market_context`,
+  `relevant_events` (the ones cited), one `InstrumentView` (direction, horizon, confidence, rationale, drivers, risks,
+  would-change-if, change), `inputs`, `previous_as_of`, `carried_forward_from`, `unaddressed_events`, gaps.
+- **Computed once.** `inputs` = latest price snapshot, ids of the relevant events and the digest of the market outlook used.
+  When they equal the previous outlook's the view is carried forward without a model call; the stage also leaves an existing
+  outlook of the same date alone. A new event regenerates only the instruments it bears on. (An unchanged market view with a
+  later date is not news.)
+- **Same guard as the market outlook** (closed sets, evidence of this run, no previous outlook as support, grounded figures,
+  derived change kind, a direction change needs newer evidence: a later price, a relevant event after the previous date or a
+  changed market outlook), plus confidence caps: `low` while a risk statistic is unavailable for lack of history (with five
+  snapshots that is every instrument) or the price path is insufficient, `medium` when the view cites neither an event nor a
+  peer comparison.
+- **No client data.** Positions are read only to know which instruments exist, never quantities or owners.
+
+```sh
+uv run rm-dashboard-outlook --as-of 2026-08-26 --db rm.db --reports-dir reports [--instruments SYN-EQ-0001,SYN-CM-0401] [--force]
+```
+
+The command writes the market outlook first, then the instruments in parallel (`--concurrency`):
+`reports/<as_of>/outlook/instruments/<id>.json`, `evidence/instruments/<id>.json` and a `summary.json` with the status of
+every instrument. `audit.jsonl` is append-only across runs. A failure of one instrument is a gap in its own outlook only.
 
 ## Models
 

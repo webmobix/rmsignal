@@ -5,12 +5,12 @@ from typing import Literal
 
 import polars as pl
 
-from rm_dashboard.analytics import concentration, credit, exposure, liquidity, mandate, performance, risk
+from rm_dashboard.analytics import concentration, credit, exposure, liquidity, mandate, market, performance, risk
 from rm_dashboard.analytics.fx import FxTable, fx_table
 from rm_dashboard.analytics.base import Calc
 
 from .envelope import build_result
-from .spec import ClientParams, FacilityParams, InstrumentParams, Params, PortfolioParams, ToolContext, ToolSpec
+from .spec import AsOfOnly, ClientParams, FacilityParams, InstrumentParams, Params, PortfolioParams, ToolContext, ToolSpec
 
 VALUE_COL_PORTFOLIO = "market_value_base"
 VALUE_COL_CLIENT = "market_value_usd"
@@ -207,6 +207,12 @@ def risk_tool(ctx: ToolContext, p: RiskParams):
     return _wrap("analytics.risk", p, calc, [pr])
 
 
+def market_trend_tool(ctx: ToolContext, p: Params):
+    h = ctx.repo.market_history(as_of=p.as_of)
+    calc = market.market_trend(market.pivot_series(h.frame.to_dicts() if h.frame.height else []))
+    return _wrap("analytics.market_trend", p, calc, [h])
+
+
 def _a(name, desc, params, fn):
     return ToolSpec(name, desc, params, fn, "analytics")
 
@@ -221,5 +227,6 @@ ANALYTICS_TOOLS = [
     _a("analytics.collateral_funding", "Whether a client's needs can be funded without breaching the facility when collateral is pledged.", FacilityParams, collateral_funding_tool),
     _a("analytics.pnl", "Unrealised profit and loss of a portfolio, excluding positions without cost basis.", PortfolioParams, pnl_tool),
     _a("analytics.change", "Change in portfolio value between two dates decomposed into price, FX and flow.", ChangeParams, change_tool),
+    _a("analytics.market_trend", "Level and change of every market series against the previous and the first snapshot.", AsOfOnly, market_trend_tool),
     _a("analytics.risk", "Volatility, VaR, drawdown or Sharpe; insufficient_history when the series is too short.", RiskParams, risk_tool),
 ]

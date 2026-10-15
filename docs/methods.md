@@ -64,6 +64,14 @@ Per instrument, value V = quantity x price x fx (base per local). Between t0 and
 
 Volatility, value-at-risk, drawdown and Sharpe need a return series; they return insufficient_history (no number) when fewer observations than the stated minimum are available. With enough data: volatility = sample stdev of simple returns; historical VaR = negative quantile of returns; drawdown = worst peak-to-trough decline of the price path; Sharpe = mean excess return / volatility (per-period, not annualised).
 
+### market_trend
+
+Per market series, from its values at every snapshot up to the effective one: latest level; absolute change and percent change (change / earlier level x 100, 2 decimals) against the previous snapshot and against the first snapshot; number of snapshots. Rates and volatility are levels, so their percent change is a change in the level, not in basis points. With fewer than 2 snapshots it returns insufficient_history.
+
+### instrument_context
+
+From an instrument's prices at every snapshot up to the effective one: percent change (change / earlier price x 100, 2 decimals) against the previous snapshot and against the first snapshot. Peers are the other instruments of the same asset class with the same sector, or with the same sub-asset class when the sector is generic (Diversified, Multi, Cash or empty), those in the instrument's region first, at most 8; the group average is the mean of the peers' percent changes and the relative performance is the instrument's change minus that average, in percentage points. With fewer than 2 prices it returns insufficient_history; with none, insufficient_data.
+
 ## 3. Tools
 
 Each tool takes identifiers and `as_of` only (the agent layer supplies `as_of`; the model cannot choose it). Parameters below exclude `as_of`.
@@ -76,6 +84,7 @@ Each tool takes identifiers and `as_of` only (the agent layer supplies `as_of`; 
 | `analytics.credit_ltv` | analytics | facility_id, horizon_days | Loan-to-value, headroom to trigger and cure amount for a facility. | relationship_analyst |
 | `analytics.exposure` | analytics | portfolio_id, dimension | Portfolio exposure by asset_class, currency, sector or region. | portfolio_analyst |
 | `analytics.liquidity` | analytics | client_id, horizon_days | Liquid assets against planned needs and uncalled commitments within a horizon. | relationship_analyst |
+| `analytics.market_trend` | analytics | - | Level and change of every market series against the previous and the first snapshot. | outlook_analyst |
 | `analytics.mandate_drift` | analytics | portfolio_id | Asset-class weights against mandate bands; custody portfolios are not applicable. | portfolio_analyst |
 | `analytics.pnl` | analytics | portfolio_id | Unrealised profit and loss of a portfolio, excluding positions without cost basis. | portfolio_analyst |
 | `analytics.risk` | analytics | instrument_id, measure | Volatility, VaR, drawdown or Sharpe; insufficient_history when the series is too short. | instrument_analyst |
@@ -85,12 +94,19 @@ Each tool takes identifiers and `as_of` only (the agent layer supplies `as_of`; 
 | `clients.list` | domain | - | Clients that exist at a date, with a few identifying fields. | - |
 | `commitments.list` | domain | client_id | Private-markets commitments of a client. | relationship_analyst |
 | `credit.facilities` | domain | client_id | Credit facilities of a client with figures per snapshot up to as_of. | relationship_analyst |
-| `events.list` | domain | - | Curated dated events up to as_of. | instrument_analyst, portfolio_analyst, relationship_analyst |
+| `events.list` | domain | - | Curated dated events up to as_of, each with a stable event_id. | instrument_analyst, outlook_analyst, portfolio_analyst, relationship_analyst |
+| `events.relevant` | domain | instrument_id | Events dated up to as_of that may bear on one instrument (region, sector, asset class, name or underlying), each with what it matched on. Candidates only. | outlook_analyst (instrument runs) |
+| `instruments.context` | domain | instrument_id | Instrument reference data, price path across snapshots, peers with relative performance, and which risk statistics the history allows. | outlook_analyst (instrument runs) |
 | `instruments.get` | domain | instrument_id | Instrument reference data. | instrument_analyst, portfolio_analyst |
 | `instruments.prices` | domain | instrument_id | Instrument price history, one row per snapshot up to as_of. | instrument_analyst |
+| `market.history` | domain | - | Market series (indices, rates, FX, commodities) at every snapshot up to the effective one. | outlook_analyst |
 | `market.snapshot` | domain | - | Market series (indices, rates, FX, commodities) at the effective snapshot. | instrument_analyst, portfolio_analyst, relationship_analyst |
-| `news.list` | domain | - | News for the period. Currently no news source: returns no_data plus curated events. | instrument_analyst, relationship_analyst |
+| `news.list` | domain | - | News for the period: dated market-moving events from the curated event log, up to as_of. No external news feed yet. | instrument_analyst, outlook_analyst, relationship_analyst |
 | `notes.list` | domain | client_id | Relationship-manager notes up to as_of, as dated quoted text. | relationship_analyst |
+| `outlook.instrument` | outlook | instrument_id | The outlook of one instrument for the run's date (the latest one not after it), as the bank's view with its date. | portfolio_analyst |
+| `outlook.market` | outlook | - | The market outlook for the run's date (the latest one not after it), as the bank's view with its date. | outlook_analyst (instrument runs), portfolio_analyst, relationship_analyst |
+| `outlook.previous_instrument` | outlook | instrument_id | The latest earlier outlook of one instrument, as a reference view only (never support for a driver or risk). | outlook_analyst (instrument runs) |
+| `outlook.previous_market` | outlook | - | The latest earlier market outlook, as a reference view only (never support for a driver or risk). | outlook_analyst |
 | `parties.get` | domain | client_id | The client as a party (individual or organisation) with its relationships list. | relationship_analyst |
 | `peers.kyc_status` | peer | client_id | KYC and compliance status of a client from the bank's KYC peer agent (A2A). | relationship_analyst |
 | `persons.list` | domain | client_id | Persons linked to a client. Currently no data source: returns no_data. | relationship_analyst |
@@ -119,4 +135,29 @@ Source: `policy/`, see [policy-checkpoints.md](policy-checkpoints.md). Ten check
 
 ## 7. Agents and A2A
 
-Source: `agents/`, `a2a/`, see [agents.md](agents.md). Relationship Analyst (the RM's view of one client and the client's portfolios) delegates to Portfolio Analyst, which delegates to Instrument Analyst. Each is also served over A2A with an Agent Card.
+Source: `agents/`, `a2a/`, see [agents.md](agents.md). Relationship Analyst (the RM's view of one client and the client's portfolios) delegates to Portfolio Analyst, which reads the persisted instrument outlooks of its largest positions (there is no per-position delegation). The Instrument Analyst remains for interactive use. Each analyst is also served over A2A with an Agent Card.
+
+## 8. Market outlook
+
+Source: `outlook/`, see [agents.md](agents.md). A view is a direction, not a number: the trend figures it rests on come from `analytics.market_trend` (method `market_trend`) and the reasons from events, never from the model's arithmetic.
+
+| Rule (code) | Effect |
+|---|---|
+| New data = a later market snapshot, a later event date or a different event count | A new outlook is generated; otherwise the previous views are carried forward |
+| Segment, direction, horizon, confidence outside the closed sets | The view is removed (gap) |
+| Driver or risk without valid evidence of this run, citing the previous outlook, an event that was not returned, or another date | The driver or risk is removed (gap) |
+| Figure in a driver, risk, rationale, would-change-if or summary absent from the cited evidence | Driver or risk removed; rationale and would-change-if blanked; summary dropped |
+| Direction differs from the previous outlook and no cited evidence is newer than it | The previous direction is kept (gap) |
+| No cited event in the view | Confidence at most `medium` |
+| Market history too short for a trend | Confidence `low` (gap) |
+
+### Instrument outlook
+
+| Rule (code) | Effect |
+|---|---|
+| Latest price, relevant event ids and market outlook digest equal the previous outlook's | The previous view is carried forward without a model call |
+| A direction change cites no newer price, relevant event or market outlook | The previous direction is kept (gap) |
+| Risk statistics unavailable (history too short) or price path insufficient | Confidence `low`; the statistics are listed in `unavailable_statistics` |
+| View cites neither an event nor a peer comparison | Confidence at most `medium` |
+| Driver or risk cites an event that `events.relevant` did not return, the previous outlook, or another date | The driver or risk is removed (gap) |
+| No valid view | The previous view is kept (gap), or no view (gap) |

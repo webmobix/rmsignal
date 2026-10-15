@@ -1,5 +1,6 @@
 """Batch runner: one analysis per client at one ``as_of``, persisted as JSON with a run summary."""
 
+import dataclasses
 import json
 from collections import Counter
 from collections.abc import Callable
@@ -32,6 +33,8 @@ def run_batch(registry: ToolRegistry, *, as_of: date, out_dir: Path, client_ids:
               settings: Settings | None = None, progress: Callable[[str, Report], None] | None = None) -> BatchResult:
     settings = settings or registry.ctx.settings
     models = models or (lambda role: build_model(settings, role=role))
+    if registry.ctx.reports_dir is None:  # the outlooks live beside the reports: <out_dir>/<as_of>/outlook/
+        registry = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=Path(out_dir)), registry.specs.values())
     repo = registry.ctx.repo
     ids = client_ids or repo.clients(as_of=as_of).frame["client_id"].to_list()
     run_dir = Path(out_dir) / as_of.isoformat()

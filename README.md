@@ -208,3 +208,18 @@ you are using the same host and port the server printed on startup.
 ```sh
 uv run pytest
 ```
+
+### Market and instrument outlooks (run first)
+
+```sh
+uv run rm-dashboard-outlook --as-of 2026-08-26 --db rm.db --reports-dir reports [--instruments SYN-EQ-0001,SYN-CM-0401] [--force]
+```
+
+Writes `reports/<as-of>/outlook/market.json`: the bank's house view of the market, independent of clients: a direction,
+confidence, cited drivers (events are the stated reasons) and risks per segment, and what changed since the previous
+outlook. It changes only when new data has arrived; otherwise the previous views are carried forward and earlier
+outlooks stay as the reference. With `--instruments` or by default for every held instrument, it also writes
+`reports/<as-of>/outlook/instruments/<id>.json`: one outlook per instrument, computed once and shared by all clients, in the
+context of its peers, the events that bear on it and the market outlook. Run it before the client analysis: the pipeline order is
+`rm-dashboard-outlook` -> `rm-dashboard-analyse` -> `rm-dashboard-reconcile` -> `rm-dashboard-actions` -> `rm-dashboard-overview`, and the client
+analysis reads the outlooks (a missing outlook is a gap, not a failure). See [docs/agents.md](docs/agents.md).

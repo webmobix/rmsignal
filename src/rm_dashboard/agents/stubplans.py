@@ -60,6 +60,8 @@ def plan_for(role: str, mode: str, messages: list[BaseMessage]) -> AIMessage:
         return _overview_summary(mode, human_text(messages))
     if role == "client_actions":
         return _client_actions(mode, human_text(messages))
+    if role == "outlook_analyst":
+        return _outlook(mode, messages)
     humans = human_text(messages)
     results = tool_results(messages)
     if len(humans) > 1 and results:
@@ -110,9 +112,7 @@ def _portfolio(sid, step, by, results, messages, mode):
     w = _first(by, "analytics.weights")
     if step == 1 and w and w["data"]:
         top = sorted(w["data"]["weights"], key=lambda r: (-r["weight_pct"], r["instrument_id"]))[:2]
-        return AIMessage(content="", tool_calls=[
-            {"name": "task", "args": {"subagent_type": "instrument_analyst", "description": f"Analyse instrument {r['instrument_id']}."},
-             "id": f"call_{len(messages)}_{i}", "type": "tool_call"} for i, r in enumerate(top)])
+        return _calls(messages, [("outlook.market", {}), *[("outlook.instrument", {"instrument_id": r["instrument_id"]}) for r in top]])
     findings = []
     m, pnl = _first(by, "analytics.mandate_drift"), _first(by, "analytics.pnl")
     if m:
@@ -136,10 +136,29 @@ def _portfolio(sid, step, by, results, messages, mode):
         d = pnl["data"]
         findings.append(_f(f"Unrealised P&L is {d['unrealised_pnl_pct']:.2f}% of cost basis across {d['positions_included']} positions; "
                            f"{d['positions_excluded']} without cost basis are excluded.", [pnl["evidence_id"]]))
-    for c in _children(results):
-        for cf in c["findings"][:1]:
-            findings.append(_f(f"Instrument analysis of {c['subject']}: {cf['claim']}", cf["evidence_ids"], "medium"))
+    findings += _outlook_findings(by)
     return _final(findings, f"Portfolio analysis of {sid}.", mode, (w or m or {}).get("evidence_id"))
+
+
+def _outlook_findings(by) -> list[dict]:
+    """The bank's views as the client analysts state them: dated, with direction, horizon and confidence; or the fact that none exists."""
+    out = []
+    for r in by.get("outlook.market", []):
+        if r["status"] == "ok":
+            overall = next((v for v in r["data"]["views"] if v["segment"] == "overall"), None)
+            if overall:
+                out.append(_f(f"The bank's market view as of {r['data']['market_outlook_as_of']} is {overall['direction']} "
+                              f"({overall['confidence']} confidence, {overall['horizon']} horizon).", [r["evidence_id"]], "medium"))
+        else:
+            out.append(_f(f"No market outlook is available: {r['reason']}.", [r["evidence_id"]], "high"))
+    for r in by.get("outlook.instrument", []):
+        if r["status"] == "ok":
+            d = r["data"]
+            out.append(_f(f"The bank's view of {d['instrument_id']} as of {d['outlook_as_of']} is {d['direction']} "
+                          f"({d['confidence']} confidence, {d['horizon']} horizon).", [r["evidence_id"]], "medium"))
+        else:
+            out.append(_f(f"No outlook is available: {r['reason']}.", [r["evidence_id"]], "high"))
+    return out
 
 
 # ---- relationship ---------------------------------------------------------------------
@@ -149,7 +168,7 @@ def _relationship(cid, step, by, results, messages, mode):
             ("clients.get", {"client_id": cid}), ("parties.get", {"client_id": cid}), ("relationships.list", {"client_id": cid}),
             ("persons.list", {"client_id": cid}), ("portfolios.list", {"client_id": cid}), ("credit.facilities", {"client_id": cid}),
             ("analytics.concentration", {"client_id": cid}), ("analytics.liquidity", {"client_id": cid}), ("notes.list", {"client_id": cid}),
-            ("peers.kyc_status", {"client_id": cid})])
+            ("peers.kyc_status", {"client_id": cid}), ("outlook.market", {})])
     if step == 1:
         calls = []
         facs = _first(by, "credit.facilities")
@@ -193,6 +212,7 @@ def _relationship(cid, step, by, results, messages, mode):
     for ch in _children(results):
         for cf in ch["findings"][:1]:
             findings.append(_f(f"Portfolio analysis of {ch['subject']}: {cf['claim']}", cf["evidence_ids"], "medium"))
+    findings += _outlook_findings({"outlook.market": by.get("outlook.market", [])})
     return _final(findings, f"Relationship analysis of {cid}.", mode, (conc or c or {}).get("evidence_id"))
 
 
@@ -306,3 +326,106 @@ def _overview_summary(mode: str, humans: list[str]) -> AIMessage:
         out["order"] = [a["action_id"] for a in reversed(actions)]
         out["actions"] = list(reversed(actions))
     return AIMessage(content=json.dumps(out))
+
+
+# ---- market outlook ---------------------------------------------------------------------------
+_SEGMENT_OF = {"Equity index": "equity", "Rates": "rates", "FX": "fx", "Commodity": "commodities", "Volatility": "volatility"}
+_UP_IS = {"equity": "positive", "commodities": "positive", "rates": "negative", "volatility": "negative", "fx": "neutral"}
+_FLIP = {"positive": "negative", "negative": "positive", "neutral": "neutral"}
+_EVENT_WORDS = {"overall": (), "commodities": ("energy", "oil", "gold", "brent"), "rates": ("duration", "yield", "fixed income", "treasury")}
+
+
+def _outlook(mode: str, messages: list[BaseMessage]) -> AIMessage:
+    if mode == "unparsable":
+        return AIMessage(content="No structured answer.")
+    humans = human_text(messages)
+    sid = re.search(r"SYN-[A-Z]{2}-\d{4}", humans[0] if humans else "")
+    if sid:
+        return _outlook_instrument(mode, messages, sid.group(0))
+    step = _steps_taken(messages)
+    if step == 0:
+        return _calls(messages, [("analytics.market_trend", {}), ("news.list", {}), ("outlook.previous_market", {})])
+    by = _by_tool(tool_results(messages))
+    trend, news = _first(by, "analytics.market_trend"), _first(by, "news.list")
+    m = re.search(r"Segments: ([a-z, ]+)\.", humans[0] if humans else "")
+    segments = [x.strip() for x in m.group(1).split(",")] if m else ["overall"]
+    series = {}
+    for r in ((trend or {}).get("data") or {}).get("series", []):
+        series.setdefault(_SEGMENT_OF.get(r["category"], ""), []).append(r)
+    severe = [e for e in ((news or {}).get("data") or {}).get("news", []) if e["severity"] in ("High", "Severe")]
+    views = []
+    for seg in segments:
+        rows = sorted(series.get(seg, []), key=lambda r: r["series_id"])
+        moves = [r["vs_previous"]["change_pct"] for r in rows if "vs_previous" in r and r["vs_previous"]["change_pct"] is not None]
+        if seg == "overall":
+            direction = "neutral"
+        elif not moves or sum(moves) == 0:
+            direction = "neutral"
+        else:
+            up = sum(moves) > 0
+            direction = _UP_IS[seg] if up else _FLIP[_UP_IS[seg]]
+        if mode == "flip":
+            direction = _FLIP[direction]
+        drivers = []
+        if rows and trend:
+            r = rows[0]
+            claim = f"{r['series_name']} stands at {r['latest']:g} {r['unit']}." if "previous" not in r else \
+                f"{r['series_name']} stands at {r['latest']:g} {r['unit']} after {r['previous']:g} at the previous snapshot."
+            drivers.append({"claim": claim, "evidence_ids": [trend["evidence_id"]], "event_refs": []})
+        words = _EVENT_WORDS.get(seg)
+        if words is not None and news:
+            hits = [e for e in severe if not words or any(w in (e["primary_transmission"] + " " + e["description"]).lower() for w in words)]
+            for e in hits[-2:]:
+                drivers.append({"claim": e["description"], "evidence_ids": [], "event_refs": [e["event_id"]]})
+        if mode == "uncited_number" and seg == "equity" and trend:
+            drivers.append({"claim": "Equities will reach 98765 points.", "evidence_ids": [trend["evidence_id"]], "event_refs": []})
+        if not drivers and news:
+            drivers.append({"claim": "No market series moved enough to name a driver.", "evidence_ids": [news["evidence_id"]], "event_refs": []})
+        change = {"why": "Market data moved since the previous outlook.", "evidence_ids": [trend["evidence_id"]] if trend else [], "event_refs": []}
+        views.append({"segment": seg, "direction": direction, "horizon": "3m", "confidence": "medium",
+                      "rationale": f"The {seg} view follows the latest market snapshot and the events that bear on it.",
+                      "drivers": drivers, "risks": [], "would_change_if": "A new market snapshot or event points the other way.",
+                      "change": change})
+    return AIMessage(content=json.dumps({"summary": "House view of the market.", "views": views}))
+
+
+def _n(x: float) -> str:
+    """A figure as written in prose: no exponent, so the guard can read it back."""
+    return f"{x:.10g}"
+
+
+def _outlook_instrument(mode: str, messages: list[BaseMessage], iid: str) -> AIMessage:
+    if _steps_taken(messages) == 0:
+        return _calls(messages, [("instruments.context", {"instrument_id": iid}), ("events.relevant", {"instrument_id": iid}),
+                                 ("outlook.market", {}), ("outlook.previous_instrument", {"instrument_id": iid})])
+    by = _by_tool(tool_results(messages))
+    ctx, ev, mk = _first(by, "instruments.context"), _first(by, "events.relevant"), _first(by, "outlook.market")
+    data = (ctx or {}).get("data") or {}
+    summary = data.get("summary") or {}
+    move = summary.get("vs_previous_pct")
+    direction = "neutral" if not move else ("positive" if move > 0 else "negative")
+    if mode == "flip":
+        direction = _FLIP[direction]
+    drivers = []
+    if ctx and "previous" in summary:
+        drivers.append({"claim": f"The price moved from {_n(summary['previous'])} to {_n(summary['latest'])} between the last two snapshots.",
+                        "evidence_ids": [ctx["evidence_id"]], "event_refs": []})
+        peers = data.get("peers") or {}
+        if peers.get("members") and peers.get("group_avg_vs_previous_pct") is not None:
+            drivers.append({"claim": f"Peers moved {_n(peers['group_avg_vs_previous_pct'])}% against {_n(move)}% for the instrument.",
+                            "evidence_ids": [ctx["evidence_id"]], "event_refs": []})
+    severe = [e for e in ((ev or {}).get("data") or {}).get("events", []) if e["severity"] in ("High", "Severe")]
+    for e in severe[-2:]:
+        drivers.append({"claim": e["description"], "evidence_ids": [], "event_refs": [e["event_id"]]})
+    views = {v["segment"]: v for v in (((mk or {}).get("data") or {}).get("views") or [])}
+    if mk and "overall" in views:
+        drivers.append({"claim": f"The overall market view is {views['overall']['direction']}.", "evidence_ids": [mk["evidence_id"]], "event_refs": []})
+    if mode == "uncited_number" and ctx:
+        drivers.append({"claim": "The price will reach 98765.", "evidence_ids": [ctx["evidence_id"]], "event_refs": []})
+    if not drivers and ctx:
+        drivers.append({"claim": "Too little history to name a driver.", "evidence_ids": [ctx["evidence_id"]], "event_refs": []})
+    view = {"direction": direction, "horizon": "3m", "confidence": "medium",
+            "rationale": "The view follows the latest price move, its peers, the events that bear on it and the market outlook.",
+            "drivers": drivers, "risks": [], "would_change_if": "A new price, event or market outlook points the other way.",
+            "change": {"why": "The price moved since the previous outlook.", "evidence_ids": [ctx["evidence_id"]] if ctx else [], "event_refs": []}}
+    return AIMessage(content=json.dumps({"summary": "House view of the instrument.", "view": view}))

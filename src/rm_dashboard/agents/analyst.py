@@ -41,8 +41,8 @@ ANALYSTS: dict[str, AnalystSpec] = {
         ALLOWLISTS["instrument_analyst"], (), "Analyses one instrument: reference data, price path, events, market context."),
     "portfolio_analyst": AnalystSpec(
         "portfolio_analyst", "portfolio", r"PF-\d{4}", prompts.PORTFOLIO_ANALYST,
-        ALLOWLISTS["portfolio_analyst"], ("instrument_analyst",),
-        "Analyses one portfolio: composition, mandate bands, P&L; delegates positions to the instrument analyst."),
+        ALLOWLISTS["portfolio_analyst"], (),
+        "Analyses one portfolio: composition, mandate bands, P&L; reads the persisted outlooks of its largest positions."),
     "relationship_analyst": AnalystSpec(
         "relationship_analyst", "client", r"CL-\d{4}", prompts.RELATIONSHIP_ANALYST,
         ALLOWLISTS["relationship_analyst"], ("portfolio_analyst",),

@@ -59,3 +59,11 @@ Per instrument, value V = quantity x price x fx (base per local). Between t0 and
 
 Volatility, value-at-risk, drawdown and Sharpe need a return series; they return insufficient_history (no number) when fewer observations than the stated minimum are available. With enough data: volatility = sample stdev of simple returns; historical VaR = negative quantile of returns; drawdown = worst peak-to-trough decline of the price path; Sharpe = mean excess return / volatility (per-period, not annualised).
 
+
+## market_trend
+
+Per market series, from its values at every snapshot up to the effective one: latest level; absolute change and percent change (change / earlier level x 100, 2 decimals) against the previous snapshot and against the first snapshot; number of snapshots. Rates and volatility are levels, so their percent change is a change in the level, not in basis points. With fewer than 2 snapshots it returns insufficient_history.
+
+## instrument_context
+
+From an instrument's prices at every snapshot up to the effective one: percent change (change / earlier price x 100, 2 decimals) against the previous snapshot and against the first snapshot. Peers are the other instruments of the same asset class with the same sector, or with the same sub-asset class when the sector is generic (Diversified, Multi, Cash or empty), those in the instrument's region first, at most 8; the group average is the mean of the peers' percent changes and the relative performance is the instrument's change minus that average, in percentage points. With fewer than 2 prices it returns insufficient_history; with none, insufficient_data.

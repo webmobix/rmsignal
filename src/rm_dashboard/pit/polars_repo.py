@@ -359,6 +359,13 @@ class PolarsPitRepository:
         r = self._snapshot_result("market_context", as_of, build)
         return self._sources(r, ["series_id"])
 
+    def market_history(self, *, as_of: date) -> PitResult:
+        """Every market snapshot up to the effective one, oldest first."""
+        as_of = _require(as_of)
+        r = self._snapshot_result("market_history", as_of, lambda eff: self._market.filter(pl.col("snapshot_date") <= eff)
+                                  .sort("snapshot_date", "series_id"))
+        return self._sources(r, ["series_id"])
+
     # ---- event-dated -------------------------------------------------------------
     def _event_result(self, dataset: str, frame: pl.DataFrame, date_col: str, as_of: date,
                       key_cols: list[str]) -> PitResult:

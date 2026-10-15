@@ -5,8 +5,10 @@ Defined in `rm_dashboard.domain`. All models are pydantic v2.
 ## Entities
 
 `Party`, `Person`, `Relationship`, `Client`, `Portfolio`, `Position`, `Instrument`, `Event`.
-The dataset has no persons, related parties or news: those entities have schemas and
+The dataset has no persons or related parties: those entities have schemas and
 adapters that return `no_data`, so richer sources can be added without changing consumers.
+The curated event log is the MVP news source: `news.list` serves it as news items (`source: event_log`);
+an external feed can be added behind the same tool.
 Attributes without history carry `pit: current_only`.
 
 ## ToolResult (evidence envelope)

@@ -1,6 +1,10 @@
 """Domain tools: structured, dated data for clients, portfolios, positions, markets, text and credit."""
 
+from rm_dashboard.analytics import instrument as instrument_calc
+from rm_dashboard.analytics import risk as risk_calc
+from rm_dashboard.analytics.market import pivot_series
 from rm_dashboard.domain import Party, QualityFlag
+from rm_dashboard.outlook.relevance import MATCHING, relevant_events
 
 from .envelope import build_result, rows
 from .spec import (AsOfOnly, ClientParams, InstrumentParams, Params, PortfolioParams, ToolContext, ToolSpec)
@@ -8,7 +12,7 @@ from .spec import (AsOfOnly, ClientParams, InstrumentParams, Params, PortfolioPa
 ORGANISATION_MARKER = ("gender", "Entity")
 NO_PERSON_SOURCE = "no person source is configured: persons, beneficial owners and family members are unavailable"
 NO_RELATIONSHIP_SOURCE = "no related-party source is configured: relationships beyond the client's own portfolios are unavailable"
-NO_NEWS_SOURCE = "no news source is configured; curated dated events are returned in data.curated_events"
+NO_NEWS = "no news is dated on or before as_of"
 
 
 def _client_rows(ctx: ToolContext, p):
@@ -103,15 +107,72 @@ def market_snapshot(ctx: ToolContext, p: AsOfOnly):
     return build_result(tool="market.snapshot", version="1", params=p, as_of=p.as_of, pits=[pit], data=rows(pit))
 
 
+def with_event_ids(items: list[dict]) -> list[dict]:
+    """Stable ids (``EVT-<date>-<n>``, n counts events of the same date) so outlooks can name the events they rest on."""
+    seen: dict[str, int] = {}
+    out = []
+    for r in items:
+        d = str(r["event_date"])
+        seen[d] = seen.get(d, 0) + 1
+        out.append({"event_id": f"EVT-{d}-{seen[d]}", **r})
+    return out
+
+
 def events_list(ctx: ToolContext, p: AsOfOnly):
     pit = ctx.repo.events(as_of=p.as_of)
-    return build_result(tool="events.list", version="1", params=p, as_of=p.as_of, pits=[pit], data=rows(pit))
+    return build_result(tool="events.list", version="1", params=p, as_of=p.as_of, pits=[pit], data=with_event_ids(rows(pit)))
+
+
+RISK_STATISTICS = ("volatility", "max_drawdown")
+
+
+def instruments_context(ctx: ToolContext, p: InstrumentParams):
+    """Reference data, price path, peers and which risk statistics the history allows."""
+    inst = ctx.repo.instruments(as_of=p.as_of)
+    prices = ctx.repo.instrument_prices(as_of=p.as_of)
+    everyone = rows(inst)
+    row = next((r for r in everyone if r["instrument_id"] == p.instrument_id), None)
+    if row is None:
+        return build_result(tool="instruments.context", version="1", params=p, as_of=p.as_of, pits=[inst, prices], data=None,
+                            status="no_data", reason=f"instrument {p.instrument_id} not found")
+    series: dict[str, list] = {}
+    for r in rows(prices):
+        series.setdefault(r["instrument_id"], []).append((r["snapshot_date"], r["price"]))
+    calc = instrument_calc.instrument_context(row, series, everyone)
+    own = [price for _, price in sorted(series.get(p.instrument_id, []))]
+    stats = {}
+    for name in RISK_STATISTICS:
+        c = risk_calc.risk_measure(name, own)
+        stats[name] = {"status": c.status, "reason": c.reason, "value": c.data.get("value"), "points_available": len(own)}
+    return build_result(tool="instruments.context", version="1", params=p, as_of=p.as_of, pits=[inst, prices], calc=calc,
+                        data={**calc.data, "risk_statistics": stats})
+
+
+def events_relevant(ctx: ToolContext, p: InstrumentParams):
+    """Candidate events for one instrument, each with what it matched on."""
+    inst = ctx.repo.instruments(as_of=p.as_of, instrument_ids=[p.instrument_id])
+    ev = ctx.repo.events(as_of=p.as_of)
+    row = rows(inst)[0] if inst.frame.height else None
+    if row is None:
+        return build_result(tool="events.relevant", version="1", params=p, as_of=p.as_of, pits=[inst, ev], data=None,
+                            status="no_data", reason=f"instrument {p.instrument_id} not found")
+    found = relevant_events(row, with_event_ids(rows(ev)))
+    return build_result(tool="events.relevant", version="1", params=p, as_of=p.as_of, pits=[inst, ev],
+                        data={"events": found, "matching": MATCHING})
+
+
+def market_history(ctx: ToolContext, p: AsOfOnly):
+    """Each series with its value at every snapshot up to the effective one."""
+    pit = ctx.repo.market_history(as_of=p.as_of)
+    return build_result(tool="market.history", version="1", params=p, as_of=p.as_of, pits=[pit], data=pivot_series(rows(pit)))
 
 
 def news_list(ctx: ToolContext, p: AsOfOnly):
     pit = ctx.repo.events(as_of=p.as_of)
+    news = [{**r, "source": "event_log"} for r in with_event_ids(rows(pit))]
     return build_result(tool="news.list", version="1", params=p, as_of=p.as_of, pits=[pit],
-                        data={"news": [], "curated_events": rows(pit)}, status="no_data", reason=NO_NEWS_SOURCE)
+                        data={"news": news, "source": "event_log"},
+                        status=None if news else "no_data", reason=None if news else NO_NEWS)
 
 
 def notes_list(ctx: ToolContext, p: ClientParams):
@@ -154,8 +215,11 @@ DOMAIN_TOOLS = [
     _s("instruments.get", "Instrument reference data.", InstrumentParams, instruments_get),
     _s("instruments.prices", "Instrument price history, one row per snapshot up to as_of.", InstrumentParams, instruments_prices),
     _s("market.snapshot", "Market series (indices, rates, FX, commodities) at the effective snapshot.", AsOfOnly, market_snapshot),
+    _s("instruments.context", "Instrument reference data, price path across snapshots, peers with relative performance, and which risk statistics the history allows.", InstrumentParams, instruments_context),
+    _s("market.history", "Market series (indices, rates, FX, commodities) at every snapshot up to the effective one.", AsOfOnly, market_history),
+    _s("events.relevant", "Events dated up to as_of that may bear on one instrument (region, sector, asset class, name or underlying), each with what it matched on. Candidates only.", InstrumentParams, events_relevant),
     _s("events.list", "Curated dated events up to as_of.", AsOfOnly, events_list),
-    _s("news.list", "News for the period. Currently no news source: returns no_data plus curated events.", AsOfOnly, news_list),
+    _s("news.list", "News for the period: dated market-moving events from the curated event log, up to as_of. No external news feed yet.", AsOfOnly, news_list),
     _s("notes.list", "Relationship-manager notes up to as_of, as dated quoted text.", ClientParams, notes_list),
     _s("credit.facilities", "Credit facilities of a client with figures per snapshot up to as_of.", ClientParams, credit_facilities),
     _s("cash_needs.list", "Planned cash needs of a client with stated certainty.", ClientParams, cash_needs_list),
