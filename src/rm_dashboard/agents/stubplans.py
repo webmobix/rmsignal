@@ -54,6 +54,12 @@ def _f(claim: str, ids: list[str], confidence: str = "high") -> dict:
 
 
 def plan_for(role: str, mode: str, messages: list[BaseMessage]) -> AIMessage:
+    if role == "note_reconciler":
+        return _note_reconciler(mode, human_text(messages))
+    if role == "rm_overview_summary":
+        return _overview_summary(mode, human_text(messages))
+    if role == "client_actions":
+        return _client_actions(mode, human_text(messages))
     humans = human_text(messages)
     results = tool_results(messages)
     if len(humans) > 1 and results:
@@ -207,3 +213,96 @@ def _follow_up(mode, question, results):
         r = next(x for x in results if "evidence_id" in x)
         findings.append(_f(f"Earlier analysis ({r['tool']}) returned status {r['status']}.", [r["evidence_id"]], "medium"))
     return _final(findings, "Follow-up answered from earlier evidence.", mode, findings[0]["evidence_ids"][0])
+
+
+# ---- note reconciliation ---------------------------------------------------------------
+INPUT_MARKER = "INPUT:"
+
+
+def _note_reconciler(mode: str, humans: list[str]) -> AIMessage:
+    """A note is `consistent` when a finding quotes it by id, otherwise `unverifiable`."""
+    if mode == "unparsable":
+        return AIMessage(content="I could not produce a structured answer.")
+    text = humans[-1] if humans else ""
+    payload = json.loads(text[text.index(INPUT_MARKER) + len(INPUT_MARKER):])
+    findings = payload["findings"]
+    results = []
+    for n in payload["notes"]:
+        refs = [f["ref"] for f in findings if n["note_id"] in f["claim"]]
+        if refs:
+            results.append({"note_id": n["note_id"], "verdict": "consistent",
+                            "rationale": f"The report quotes note {n['note_id']}.", "finding_refs": refs[:2]})
+        else:
+            results.append({"note_id": n["note_id"], "verdict": "unverifiable",
+                            "rationale": "No finding addresses this note.", "finding_refs": []})
+    if results and mode == "uncited_number":
+        results[0] = {**results[0], "verdict": "contradicted", "rationale": "Exposure is 7351.24% of the total."}
+    if results and mode == "bad_ref":
+        results[0] = {**results[0], "verdict": "consistent", "rationale": "Supported.", "finding_refs": ["CL-9999#f99"]}
+    return AIMessage(content=json.dumps({"results": results}))
+
+
+# ---- client actions --------------------------------------------------------------------------
+_ACTION_RULES = (  # (claim pattern, category, importance, title, what, why)
+    (r"KYC review is (due|overdue)", "compliance_kyc", "medium", "Prepare the KYC review",
+     "Schedule and prepare the periodic KYC review with the client.", "The report shows the KYC review date."),
+    (r"largest single-name exposure", "concentration_risk", "high", "Discuss the single-name concentration",
+     "Review the largest single-name exposure with the client and agree on a diversification path.",
+     "The report shows a concentrated single-name exposure."),
+    (r"(above|below) (a|its) (maximum|minimum|trigger)|weight is .* against a", "mandate_drift", "high", "Address the mandate breach",
+     "Bring the portfolio back within its mandate bands.", "The report shows a mandate band breach."),
+    (r"LTV is", "credit_collateral", "medium", "Review the credit facility",
+     "Review the Lombard facility headroom with the client.", "The report shows the facility LTV against its trigger."),
+    (r"(fall|falls) short", "liquidity_cash_needs", "high", "Plan the liquidity shortfall",
+     "Arrange funding for the planned cash needs.", "The report shows daily-liquid assets short of planned needs."),
+)
+
+
+def _client_actions(mode: str, humans: list[str]) -> AIMessage:
+    """One action per matching finding (first match per rule) and one per contradicted note."""
+    if mode == "unparsable":
+        return AIMessage(content="No structured answer.")
+    text = humans[-1] if humans else ""
+    payload = json.loads(text[text.index(INPUT_MARKER) + len(INPUT_MARKER):])
+    actions = []
+    for pattern, cat, imp, title, what, why in _ACTION_RULES:
+        hit = next((f for f in payload["findings"] if re.search(pattern, f["claim"])), None)
+        if hit:
+            actions.append({"category": cat, "importance": imp, "title": title, "what": what, "why": why, "refs": [hit["ref"]]})
+    for n in payload["notes"]:
+        if n["verdict"] == "contradicted":
+            actions.append({"category": "client_contact", "importance": "low", "title": f"Follow up on note {n['note_id']}",
+                            "what": "Discuss the difference between the client's stated intent and the book.",
+                            "why": "The reconciliation found the note contradicted by the report.", "refs": [n["note_id"]]})
+    if actions and mode == "uncited_number":
+        actions[0] = {**actions[0], "why": "Equity weight is 7351.24% of the total."}
+    if actions and mode == "bad_ref":
+        actions[0] = {**actions[0], "refs": ["CL-9999#f99"]}
+    if actions and mode == "bad_category":
+        actions[0] = {**actions[0], "category": "marketing"}
+    return AIMessage(content=json.dumps({"actions": actions}))
+
+
+# ---- RM overview summary ---------------------------------------------------------------------
+def _overview_summary(mode: str, humans: list[str]) -> AIMessage:
+    """Names the first action and groups actions of the same category into themes."""
+    if mode == "unparsable":
+        return AIMessage(content="No structured answer.")
+    text = humans[-1] if humans else ""
+    payload = json.loads(text[text.index(INPUT_MARKER) + len(INPUT_MARKER):])
+    actions = payload["actions"]
+    summary = f"First attention: {actions[0]['title']}." if actions else ""
+    by: dict[str, list[str]] = {}
+    for a in actions:
+        by.setdefault(a["category"], []).append(a["action_id"])
+    themes = [{"title": f"{cat.replace('_', ' ').capitalize()} across clients", "action_ids": ids}
+              for cat, ids in by.items() if len(ids) >= 2]
+    out: dict = {"summary": summary, "themes": themes}
+    if mode == "uncited_number":
+        out["summary"] = "Equity weight is 7351.24% of the total."
+    if mode == "bad_ids":
+        out["themes"] = [*themes, {"title": "Phantom theme", "action_ids": ["CL-9999-A1", "CL-9999-A2"]}]
+    if mode == "reorder":
+        out["order"] = [a["action_id"] for a in reversed(actions)]
+        out["actions"] = list(reversed(actions))
+    return AIMessage(content=json.dumps(out))

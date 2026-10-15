@@ -16,8 +16,11 @@ RELATIONSHIP_ANALYST = (
     "peers.kyc_status",
 )
 
+NOTE_RECONCILER = ("notes.list",)
+
 ALLOWLISTS = {
     "instrument_analyst": INSTRUMENT_ANALYST,
     "portfolio_analyst": PORTFOLIO_ANALYST,
     "relationship_analyst": RELATIONSHIP_ANALYST,
+    "note_reconciler": NOTE_RECONCILER,
 }

@@ -23,6 +23,9 @@ rm-dashboard = "rm_dashboard:main"
 rm-dashboard-seed = "rm_dashboard.data.seed:main"
 rm-dashboard-serve = "rm_dashboard.api.serve:main"
 rm-dashboard-analyse = "rm_dashboard.runners.analyse:main"
+rm-dashboard-reconcile = "rm_dashboard.runners.reconcile:main"
+rm-dashboard-actions = "rm_dashboard.runners.actions:main"
+rm-dashboard-overview = "rm_dashboard.runners.overview:main"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]

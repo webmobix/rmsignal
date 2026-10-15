@@ -93,3 +93,15 @@ def test_documented_examples_validate():
         assert ToolResult.model_validate(obj).evidence_id
     for obj in rp:
         Report.model_validate(obj)
+
+
+def test_documented_later_stage_examples_validate():
+    from rm_dashboard.actions import ClientActions
+    from rm_dashboard.overview import Overview
+    from rm_dashboard.reconciliation import Reconciliation
+
+    for tag, model in (("reconciliation", Reconciliation), ("client-actions", ClientActions), ("overview", Overview)):
+        blocks = _blocks(tag)
+        assert blocks, tag
+        for obj in blocks:
+            assert model.model_validate(obj)

@@ -60,8 +60,12 @@ from a deterministic tool, every finding cites evidence ids, and every run is re
 | `tools` | the only data and calculation surface agents have, with per-agent allow-lists | |
 | `policy` | `PolicyEngine` interface (mock), ten checkpoints, audit log, PII pseudonymisation | [docs/policy-checkpoints.md](docs/policy-checkpoints.md) |
 | `agents` | Relationship -> Portfolio -> Instrument analysts (Deep Agents), output guard, interactive sessions | [docs/agents.md](docs/agents.md) |
+| `reportsource` | reads the persisted batch output (reports, evidence) and gives every finding a stable reference | [docs/contracts.md](docs/contracts.md) |
+| `reconciliation` | checks what RM notes say against the client report: `consistent`, `contradicted`, `unverifiable` (notes only) | [docs/agents.md](docs/agents.md) |
+| `actions` | per-client next actions: what, why, category, importance rubric, derived time horizon, links | [docs/agents.md](docs/agents.md) |
+| `overview` | the RM dashboard overview: all client actions ranked, grouped and linked, with optional briefing | [docs/agents.md](docs/agents.md) |
 | `a2a` | Agent Cards and servers for each analyst, client, mock KYC peer | |
-| `runners` | batch CLI | [docs/methods.md](docs/methods.md) (all methods) |
+| `runners` | CLIs: batch analysis, reconcile, actions, overview | [docs/methods.md](docs/methods.md) (all methods) |
 
 ### Run a batch
 
@@ -75,6 +79,37 @@ Writes `reports/<as-of>/<client>.json` (one `Report` per client), `evidence/<cli
 result behind it), `audit.jsonl` and `summary.json` with status counts. A run always delivers a report:
 `complete`, `partial` (gaps listed) or `insufficient_data` (nothing at that date). `--as-of` is required;
 `--db` can be replaced by `RM_DASHBOARD_DB`.
+
+### Reconcile RM notes
+
+```sh
+uv run rm-dashboard-reconcile --as-of 2026-08-26 --db rm.db --reports-dir reports [--clients CL-0001,CL-0017]
+```
+
+Reads the batch output of that date and writes `reports/<as-of>/reconciliation/<client>.json`: for each RM note dated
+on or before `--as-of`, a verdict (`consistent`, `contradicted`, `unverifiable`) against the client's report, with the
+evidence on both sides. Notes only; mandate reconciliation is a separate, later stage. See [docs/agents.md](docs/agents.md).
+
+### Derive next actions per client
+
+```sh
+uv run rm-dashboard-actions --as-of 2026-08-26 --db rm.db --reports-dir reports [--clients CL-0001,CL-0017]
+```
+
+Reads the batch output (and `reconciliation/` when present) and writes `reports/<as-of>/actions/<client>.json`: for each
+client a short list of actions saying what to do and why, with category, importance (rubric floors), a time horizon
+derived from dates in the evidence, and links to the findings and notes they rest on. See [docs/agents.md](docs/agents.md).
+
+### RM overview
+
+```sh
+uv run rm-dashboard-overview --as-of 2026-08-26 --db rm.db --reports-dir reports [--rm RM-SG-014]
+```
+
+Needs the earlier stages' output (`rm-dashboard-analyse`, then `rm-dashboard-reconcile` and `rm-dashboard-actions`).
+Writes `reports/<as-of>/overview/<rm_id>.json`: all next actions of the RM's clients ranked by importance, horizon and
+client size, grouped by category, each with what, why and links to the client, report findings and notes; clients
+without actions are listed with the reason. See [docs/agents.md](docs/agents.md).
 
 ### Reading the reports
 
