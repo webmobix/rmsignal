@@ -1,17 +1,147 @@
-
 @import "tailwindcss";
 
-* {
-  box-sizing: border-box;
+/* RMSignal design tokens. Warm ivory canvas, deep navy ink, brick alert,
+   muted blue-greys; one light theme on purpose. Components use these tokens
+   (bg-canvas, text-navy-950, ...) and never literal colours. */
+@theme {
+	--color-canvas: #f3f2e8;
+	--color-surface: #f8f7ef;
+	--color-surface-sunk: #e4e1d3;
+
+	--color-navy-950: #141b4b;
+	--color-navy-700: #303a78;
+	--color-slate-blue: #969cb2;
+	--color-muted-blue: #ced1dc;
+
+	--color-ink: #262626;
+	--color-ink-2: #414141;
+	--color-ink-muted: #6f7280;
+
+	--color-rule: #d9d6c8;
+	--color-hair: #e7e4d8;
+
+	--color-alert: #8c2f2a;
+	--color-alert-sunk: #efe3df;
+	--color-caution: #8a6a2b;
+	--color-caution-sunk: #f0e8d4;
+	--color-positive: #2f5d4a;
+
+	--font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+	--font-sans: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+	--spacing-gutter: clamp(20px, 4vw, 56px);
+	--container-page: 1290px;
 }
 
-html,
-body,
-#app {
-  min-height: 100%;
+@layer base {
+	:root {
+		color-scheme: light;
+	}
+	html,
+	body {
+		margin: 0;
+		min-height: 100%;
+	}
+	body {
+		background: var(--color-canvas);
+		color: var(--color-ink);
+		font-family: var(--font-sans);
+		font-size: 15px;
+		line-height: 1.6;
+		-webkit-font-smoothing: antialiased;
+	}
+	h1,
+	h2,
+	h3,
+	h4 {
+		margin: 0;
+		font-family: var(--font-serif);
+		font-weight: 400;
+		letter-spacing: -0.01em;
+	}
+	p {
+		margin: 0;
+	}
+	button {
+		font: inherit;
+		color: inherit;
+		background: none;
+		border: 0;
+		cursor: pointer;
+	}
+	a {
+		color: var(--color-navy-700);
+		text-decoration-thickness: 1px;
+		text-underline-offset: 2px;
+	}
+	table {
+		border-collapse: collapse;
+		width: 100%;
+	}
+	:focus-visible {
+		outline: 1.5px solid var(--color-navy-700);
+		outline-offset: 3px;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		* {
+			transition: none !important;
+			animation: none !important;
+		}
+	}
 }
 
-body {
-  margin: 0;
+@layer components {
+	.eyebrow {
+		font-size: 10.5px;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--color-ink-muted);
+		font-weight: 600;
+	}
+	.num {
+		font-variant-numeric: tabular-nums;
+	}
+	.rule {
+		height: 1px;
+		background: var(--color-rule);
+		border: 0;
+		margin: 0;
+	}
+	.hair {
+		height: 1px;
+		background: var(--color-hair);
+		border: 0;
+		margin: 0;
+	}
+	.card {
+		background: var(--color-surface);
+		border: 1px solid var(--color-rule);
+	}
+	.metric-value {
+		font-family: var(--font-serif);
+		font-size: 34px;
+		line-height: 1;
+		letter-spacing: -0.025em;
+		color: var(--color-navy-950);
+	}
+	.data-table th {
+		text-align: left;
+		font-size: 10.5px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		font-weight: 600;
+		color: var(--color-ink-muted);
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--color-navy-950);
+		white-space: nowrap;
+	}
+	.data-table td {
+		padding: 9px 12px;
+		border-bottom: 1px solid var(--color-hair);
+		vertical-align: top;
+		font-size: 13.5px;
+	}
+	.data-table tbody tr:hover {
+		background: var(--color-surface);
+	}
 }
-

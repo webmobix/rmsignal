@@ -65,6 +65,8 @@ from a deterministic tool, every finding cites evidence ids, and every run is re
 | `actions` | per-client next actions: what, why, category, importance rubric, derived time horizon, links | [docs/agents.md](docs/agents.md) |
 | `overview` | the RM dashboard overview: all client actions ranked, grouped and linked, with optional briefing | [docs/agents.md](docs/agents.md) |
 | `a2a` | Agent Cards and servers for each analyst, client, mock KYC peer | |
+| `api` | read-only HTTP API: raw tables (`/api/sources`) and the dashboard read endpoints | [docs/api.md](docs/api.md) |
+| `dashboard-ui/` | RMSignal web dashboard (TanStack Start) on top of the API | [dashboard-ui/README.md](dashboard-ui/README.md) |
 | `runners` | CLIs: batch analysis, reconcile, actions, overview | [docs/methods.md](docs/methods.md) (all methods) |
 
 ### Run a batch

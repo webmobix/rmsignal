@@ -1,208 +1,50 @@
-Welcome to your new TanStack Start app!
+# RMSignal (dashboard-ui)
 
-# Getting Started
+The RM dashboard for the Asia desk of Global WM Bank: a TanStack Start app (TanStack Router file routes, TanStack Query, TanStack Table, TanStack Charts, Tailwind CSS v4). It is a client of the FastAPI read API in `src/rm_dashboard/api` (see `../docs/api.md`) and shows the data for the latest `as_of`. There is no sign-in; the avatar is mocked from `/api/rm`.
 
-To run this application:
+## Run it
+
+The UI needs the API running, which needs a seeded database and a persisted run folder (`reports/<as_of>/`, produced by the analysis batch; see the root README).
 
 ```bash
+# 1. API, from the repository root (port 8765 is what the UI proxy expects)
+uv run rm-dashboard-serve --db rm.db --port 8765
+
+# 2. UI, from dashboard-ui/
 pnpm install
-pnpm dev
+pnpm dev            # http://localhost:3000
 ```
 
-# Building For Production
-
-To build this application for production:
+`/api` is forwarded to the API by Nitro `routeRules` in `vite.config.ts` (Vite's `server.proxy` is bypassed by Start's server handler). Point it elsewhere with `RM_API_URL`:
 
 ```bash
-pnpm build
+RM_API_URL=http://127.0.0.1:8000 pnpm dev
 ```
 
-## Styling
+## Types from the API
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Remove `@tailwindcss/vite` and `tailwindcss` from `package.json`
-
-## Linting & Formatting
-
-This project uses [Biome](https://biomejs.dev/) for linting and formatting. The following scripts are available:
-
+TypeScript types come from the API's OpenAPI schema and are committed in `src/api/schema.ts`. Regenerate them with the API running:
 
 ```bash
-pnpm lint
-pnpm format
-pnpm check
+pnpm gen-api        # reads $RM_API_URL or http://127.0.0.1:8765/openapi.json
 ```
 
+## Scripts
 
-## Deploy with Nitro
+| Command | Does |
+| --- | --- |
+| `pnpm dev` | dev server on port 3000 |
+| `pnpm build` | production build |
+| `pnpm test` | unit and component tests (vitest) |
+| `pnpm check` | Biome format, lint and import order |
+| `pnpm generate-routes` | regenerate `src/routeTree.gen.ts` |
 
-This project uses Nitro as a generic server adapter, so it can run on any Node-compatible host.
+## Structure
 
-```bash
-npm run build
-node dist/server/index.mjs
-```
+- `src/routes/`: file routes `/`, `/clients`, `/clients/$clientId`, `/portfolios/$portfolioId`, `/instruments`, `/instruments/$instrumentId`, `/market`. The evidence drawer is URL state on every route: `?action=`, `?evidence=` or `?finding=`.
+- `src/api/`: typed fetch client (`client.ts`), query helpers (`queries.ts`; every query key starts with the `as_of`), generated `schema.ts`.
+- `src/components/`: shared components (shell, table, drawer, tabs, state boundary, `ChartFrame` and `charts/`).
+- `src/features/`: one folder per screen.
+- `src/styles.css`: design tokens (`@theme`). Components use tokens, not literal colours.
 
-The build output is a self-contained Node server. To deploy, push the `dist/` directory to your host (Render, Fly.io, your own VPS, etc.) and run the server command above.
-
-For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda, etc.) and tuning, see https://v3.nitro.build/deploy.
-
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+Charts render client-only (`ChartFrame`); the surrounding page still server-renders. Scenario content is placeholder data from the backend and is marked "Illustrative, not computed".

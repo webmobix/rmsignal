@@ -10,33 +10,115 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MarketRouteImport } from './routes/market'
+import { Route as ClientsIndexRouteImport } from './routes/clients.index'
+import { Route as ClientsClientIdRouteImport } from './routes/clients.$clientId'
+import { Route as InstrumentsIndexRouteImport } from './routes/instruments.index'
+import { Route as InstrumentsInstrumentIdRouteImport } from './routes/instruments.$instrumentId'
+import { Route as PortfoliosPortfolioIdRouteImport } from './routes/portfolios.$portfolioId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MarketRoute = MarketRouteImport.update({
+  id: '/market',
+  path: '/market',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClientsIndexRoute = ClientsIndexRouteImport.update({
+  id: '/clients/',
+  path: '/clients/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClientsClientIdRoute = ClientsClientIdRouteImport.update({
+  id: '/clients/$clientId',
+  path: '/clients/$clientId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InstrumentsIndexRoute = InstrumentsIndexRouteImport.update({
+  id: '/instruments/',
+  path: '/instruments/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InstrumentsInstrumentIdRoute = InstrumentsInstrumentIdRouteImport.update({
+  id: '/instruments/$instrumentId',
+  path: '/instruments/$instrumentId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortfoliosPortfolioIdRoute = PortfoliosPortfolioIdRouteImport.update({
+  id: '/portfolios/$portfolioId',
+  path: '/portfolios/$portfolioId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/market': typeof MarketRoute
+  '/clients/$clientId': typeof ClientsClientIdRoute
+  '/instruments/$instrumentId': typeof InstrumentsInstrumentIdRoute
+  '/portfolios/$portfolioId': typeof PortfoliosPortfolioIdRoute
+  '/clients/': typeof ClientsIndexRoute
+  '/instruments/': typeof InstrumentsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/market': typeof MarketRoute
+  '/clients/$clientId': typeof ClientsClientIdRoute
+  '/instruments/$instrumentId': typeof InstrumentsInstrumentIdRoute
+  '/portfolios/$portfolioId': typeof PortfoliosPortfolioIdRoute
+  '/clients': typeof ClientsIndexRoute
+  '/instruments': typeof InstrumentsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/market': typeof MarketRoute
+  '/clients/$clientId': typeof ClientsClientIdRoute
+  '/instruments/$instrumentId': typeof InstrumentsInstrumentIdRoute
+  '/portfolios/$portfolioId': typeof PortfoliosPortfolioIdRoute
+  '/clients/': typeof ClientsIndexRoute
+  '/instruments/': typeof InstrumentsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/market'
+    | '/clients/$clientId'
+    | '/instruments/$instrumentId'
+    | '/portfolios/$portfolioId'
+    | '/clients/'
+    | '/instruments/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/market'
+    | '/clients/$clientId'
+    | '/instruments/$instrumentId'
+    | '/portfolios/$portfolioId'
+    | '/clients'
+    | '/instruments'
+  id:
+    | '__root__'
+    | '/'
+    | '/market'
+    | '/clients/$clientId'
+    | '/instruments/$instrumentId'
+    | '/portfolios/$portfolioId'
+    | '/clients/'
+    | '/instruments/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  MarketRoute: typeof MarketRoute
+  ClientsClientIdRoute: typeof ClientsClientIdRoute
+  InstrumentsInstrumentIdRoute: typeof InstrumentsInstrumentIdRoute
+  PortfoliosPortfolioIdRoute: typeof PortfoliosPortfolioIdRoute
+  ClientsIndexRoute: typeof ClientsIndexRoute
+  InstrumentsIndexRoute: typeof InstrumentsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,12 +130,69 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/market': {
+      id: '/market'
+      path: '/market'
+      fullPath: '/market'
+      preLoaderRoute: typeof MarketRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/clients/': {
+      id: '/clients/'
+      path: '/clients'
+      fullPath: '/clients/'
+      preLoaderRoute: typeof ClientsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/clients/$clientId': {
+      id: '/clients/$clientId'
+      path: '/clients/$clientId'
+      fullPath: '/clients/$clientId'
+      preLoaderRoute: typeof ClientsClientIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/instruments/': {
+      id: '/instruments/'
+      path: '/instruments'
+      fullPath: '/instruments/'
+      preLoaderRoute: typeof InstrumentsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/instruments/$instrumentId': {
+      id: '/instruments/$instrumentId'
+      path: '/instruments/$instrumentId'
+      fullPath: '/instruments/$instrumentId'
+      preLoaderRoute: typeof InstrumentsInstrumentIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portfolios/$portfolioId': {
+      id: '/portfolios/$portfolioId'
+      path: '/portfolios/$portfolioId'
+      fullPath: '/portfolios/$portfolioId'
+      preLoaderRoute: typeof PortfoliosPortfolioIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  MarketRoute: MarketRoute,
+  ClientsClientIdRoute: ClientsClientIdRoute,
+  InstrumentsInstrumentIdRoute: InstrumentsInstrumentIdRoute,
+  PortfoliosPortfolioIdRoute: PortfoliosPortfolioIdRoute,
+  ClientsIndexRoute: ClientsIndexRoute,
+  InstrumentsIndexRoute: InstrumentsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

@@ -84,3 +84,23 @@ def make_scope(registry, outlook_registry):
         return RunScope(run=run, registry=reg)
 
     return make
+
+
+REPORTS = Path(__file__).parent.parent / "reports"
+
+
+@pytest.fixture(scope="session")
+def api(seeded_db):
+    """The API on the seeded data and the persisted run in ``reports/`` (skipped when there is none)."""
+    from fastapi.testclient import TestClient
+
+    from rm_dashboard.api import create_app
+
+    if not (REPORTS / "2026-08-26").is_dir():
+        pytest.skip("no persisted run in reports/")
+    return TestClient(create_app(seeded_db, REPORTS))
+
+
+@pytest.fixture(scope="session")
+def reports_dir(api) -> Path:
+    return REPORTS
