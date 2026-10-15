@@ -13,6 +13,8 @@ The Portfolio Analyst no longer delegates to an Instrument Analyst: what is know
 date by the outlook stage (see *Instrument outlook* below) and read by every client analysis. The `instrument_analyst`
 role still exists for interactive sessions and A2A.
 
+The whole landscape (every agent, the runners that call them, tools per agent and A2A) is mapped in [architecture.md](architecture.md).
+
 Code: `rm_dashboard.agents` (`analyst.py` builds, runs and assembles; `stubplans.py` scripts the test model).
 
 ## How a run works

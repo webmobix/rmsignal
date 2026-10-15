@@ -59,7 +59,7 @@ from a deterministic tool, every finding cites evidence ids, and every run is re
 | `analytics` | pure Polars calculations (weights, look-through concentration, mandate drift, liquidity, LTV, P&L decomposition) | [docs/analytics.md](docs/analytics.md) |
 | `tools` | the only data and calculation surface agents have, with per-agent allow-lists | |
 | `policy` | `PolicyEngine` interface (mock), ten checkpoints, audit log, PII pseudonymisation | [docs/policy-checkpoints.md](docs/policy-checkpoints.md) |
-| `agents` | Relationship -> Portfolio -> Instrument analysts (Deep Agents), output guard, interactive sessions | [docs/agents.md](docs/agents.md) |
+| `agents` | Relationship -> Portfolio -> Instrument analysts (Deep Agents), output guard, interactive sessions | [docs/agents.md](docs/agents.md); how everything fits together: [docs/architecture.md](docs/architecture.md) |
 | `reportsource` | reads the persisted batch output (reports, evidence) and gives every finding a stable reference | [docs/contracts.md](docs/contracts.md) |
 | `reconciliation` | checks what RM notes say against the client report: `consistent`, `contradicted`, `unverifiable` (notes only) | [docs/agents.md](docs/agents.md) |
 | `actions` | per-client next actions: what, why, category, importance rubric, derived time horizon, links | [docs/agents.md](docs/agents.md) |
