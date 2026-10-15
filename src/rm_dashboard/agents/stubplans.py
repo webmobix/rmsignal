@@ -1,0 +1,209 @@
+"""Scripted behaviour of the stub model: which tools to call, then findings that quote tool results.
+
+A plan reads the conversation like a model would: it counts the steps already taken, parses earlier tool
+messages, and either asks for more tools (possibly delegating with ``task``) or writes the final JSON.
+"""
+
+import json
+import re
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+
+from .stub import StubModelError, human_text, tool_results
+from .tooladapter import lc_name
+
+ID_PATTERNS = {
+    "relationship_analyst": r"CL-\d{4}",
+    "portfolio_analyst": r"PF-\d{4}",
+    "instrument_analyst": r"SYN-[A-Z]{2}-\d{4}",
+}
+
+
+def _calls(messages: list[BaseMessage], calls: list[tuple[str, dict]]) -> AIMessage:
+    n = len(messages)
+    return AIMessage(content="", tool_calls=[
+        {"name": name if name == "task" else lc_name(name), "args": args, "id": f"call_{n}_{i}", "type": "tool_call"}
+        for i, (name, args) in enumerate(calls)])
+
+
+def _steps_taken(messages: list[BaseMessage]) -> int:
+    last_human = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
+    return sum(1 for m in messages[last_human + 1:] if isinstance(m, AIMessage) and m.tool_calls)
+
+
+def _by_tool(results: list[dict]) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for r in results:
+        if "tool" in r and "evidence_id" in r:
+            out.setdefault(r["tool"], []).append(r)
+    return out
+
+
+def _children(results: list[dict]) -> list[dict]:
+    return [r for r in results if "agent" in r and "findings" in r and "evidence_id" not in r]
+
+
+def _final(findings: list[dict], summary: str, mode: str, anchor: str | None) -> AIMessage:
+    if mode == "uncited_number" and anchor:
+        findings = [*findings, {"claim": "Equity weight is 7351.24% of the total.", "confidence": "high", "evidence_ids": [anchor]}]
+    return AIMessage(content=json.dumps({"summary": summary, "findings": findings}))
+
+
+def _f(claim: str, ids: list[str], confidence: str = "high") -> dict:
+    return {"claim": claim, "confidence": confidence, "evidence_ids": ids}
+
+
+def plan_for(role: str, mode: str, messages: list[BaseMessage]) -> AIMessage:
+    humans = human_text(messages)
+    results = tool_results(messages)
+    if len(humans) > 1 and results:
+        return _follow_up(mode, humans[-1], results)
+    subject = _subject(role, humans[0] if humans else "")
+    step = _steps_taken(messages)
+    by = _by_tool(results)
+    plan = {"instrument_analyst": _instrument, "portfolio_analyst": _portfolio, "relationship_analyst": _relationship}[role]
+    return plan(subject, step, by, results, messages, mode)
+
+
+def _subject(role: str, text: str) -> str:
+    m = re.search(ID_PATTERNS[role], text)
+    return m.group(0) if m else ""
+
+
+def _first(by, tool):
+    return (by.get(tool) or [None])[0]
+
+
+# ---- instrument -----------------------------------------------------------------------
+def _instrument(sid, step, by, results, messages, mode):
+    if step == 0:
+        return _calls(messages, [("instruments.get", {"instrument_id": sid}), ("instruments.prices", {"instrument_id": sid})])
+    g, p = _first(by, "instruments.get"), _first(by, "instruments.prices")
+    findings = []
+    if g and g["data"]:
+        d = g["data"]
+        findings.append(_f(f"{d['instrument_name']} is a {d['sub_asset_class']} instrument in the {d['asset_class']} asset class, "
+                           f"quoted in {d['currency']} with {d['liquidity_tier']} liquidity.", [g["evidence_id"]]))
+    elif g:
+        findings.append(_f(f"No reference data was returned for {sid}: {g['reason']}.", [g["evidence_id"]], "high"))
+    if p and p["data"]:
+        rows = sorted(p["data"], key=lambda r: r["snapshot_date"])
+        a, b = rows[0], rows[-1]
+        findings.append(_f(f"Price moved from {a['price']:g} to {b['price']:g} between {a['snapshot_date']} and {b['snapshot_date']}.",
+                           [p["evidence_id"]]))
+    return _final(findings, f"Instrument analysis of {sid}.", mode, (g or p or {}).get("evidence_id"))
+
+
+# ---- portfolio ------------------------------------------------------------------------
+def _portfolio(sid, step, by, results, messages, mode):
+    if step == 0:
+        return _calls(messages, [
+            ("portfolios.get", {"portfolio_id": sid}), ("positions.list", {"portfolio_id": sid}),
+            ("analytics.weights", {"portfolio_id": sid}), ("analytics.exposure", {"portfolio_id": sid, "dimension": "asset_class"}),
+            ("analytics.mandate_drift", {"portfolio_id": sid}), ("analytics.pnl", {"portfolio_id": sid})])
+    w = _first(by, "analytics.weights")
+    if step == 1 and w and w["data"]:
+        top = sorted(w["data"]["weights"], key=lambda r: (-r["weight_pct"], r["instrument_id"]))[:2]
+        return AIMessage(content="", tool_calls=[
+            {"name": "task", "args": {"subagent_type": "instrument_analyst", "description": f"Analyse instrument {r['instrument_id']}."},
+             "id": f"call_{len(messages)}_{i}", "type": "tool_call"} for i, r in enumerate(top)])
+    findings = []
+    m, pnl = _first(by, "analytics.mandate_drift"), _first(by, "analytics.pnl")
+    if m:
+        d = m["data"] or {}
+        if m["status"] != "ok":
+            findings.append(_f(f"Mandate comparison was not possible: {m['reason']}.", [m["evidence_id"]]))
+        elif d.get("applicable") is False:
+            findings.append(_f(f"Portfolio {sid} is a custody account and is not measured against a mandate.", [m["evidence_id"]]))
+        elif d.get("breaches"):
+            for b in d["breaches"]:
+                lim = b["max_pct"] if b["breach"] == "above_max" else b["min_pct"]
+                word = "maximum" if b["breach"] == "above_max" else "minimum"
+                findings.append(_f(f"{b['asset_class']} weight is {b['weight_pct']:.2f}% against a {word} of {lim:.2f}% "
+                                   f"(gap {abs(b['gap_pp']):.2f} percentage points).", [m["evidence_id"]]))
+        else:
+            findings.append(_f("All asset-class weights are within the mandate bands.", [m["evidence_id"]]))
+    if w and w["data"]:
+        t = max(w["data"]["weights"], key=lambda r: (r["weight_pct"], r["instrument_id"]))
+        findings.append(_f(f"The largest position, {t['instrument_id']}, is {t['weight_pct']:.2f}% of the portfolio.", [w["evidence_id"]]))
+    if pnl and pnl["data"] and pnl["data"].get("unrealised_pnl_pct") is not None:
+        d = pnl["data"]
+        findings.append(_f(f"Unrealised P&L is {d['unrealised_pnl_pct']:.2f}% of cost basis across {d['positions_included']} positions; "
+                           f"{d['positions_excluded']} without cost basis are excluded.", [pnl["evidence_id"]]))
+    for c in _children(results):
+        for cf in c["findings"][:1]:
+            findings.append(_f(f"Instrument analysis of {c['subject']}: {cf['claim']}", cf["evidence_ids"], "medium"))
+    return _final(findings, f"Portfolio analysis of {sid}.", mode, (w or m or {}).get("evidence_id"))
+
+
+# ---- relationship ---------------------------------------------------------------------
+def _relationship(cid, step, by, results, messages, mode):
+    if step == 0:
+        return _calls(messages, [
+            ("clients.get", {"client_id": cid}), ("parties.get", {"client_id": cid}), ("relationships.list", {"client_id": cid}),
+            ("persons.list", {"client_id": cid}), ("portfolios.list", {"client_id": cid}), ("credit.facilities", {"client_id": cid}),
+            ("analytics.concentration", {"client_id": cid}), ("analytics.liquidity", {"client_id": cid}), ("notes.list", {"client_id": cid}),
+            ("peers.kyc_status", {"client_id": cid})])
+    if step == 1:
+        calls = []
+        facs = _first(by, "credit.facilities")
+        for f in ((facs or {}).get("data") or {}).get("facilities", []):
+            calls.append(("analytics.credit_ltv", {"facility_id": f["facility_id"]}))
+        pfs = _first(by, "portfolios.list")
+        tasks = [{"name": "task", "args": {"subagent_type": "portfolio_analyst", "description": f"Analyse portfolio {p['portfolio_id']}."},
+                  "id": f"call_{len(messages)}_t{i}", "type": "tool_call"} for i, p in enumerate(((pfs or {}).get("data")) or [])]
+        base = _calls(messages, calls).tool_calls if calls else []
+        return AIMessage(content="", tool_calls=[*base, *tasks])
+    findings = []
+    c, rel, per = _first(by, "clients.get"), _first(by, "relationships.list"), _first(by, "persons.list")
+    conc, liq = _first(by, "analytics.concentration"), _first(by, "analytics.liquidity")
+    if c and c["data"] and c["data"]["client"]:
+        cl = c["data"]["client"]
+        if cl["kyc_overdue"]:
+            findings.append(_f(f"The KYC review is overdue by {abs(cl['days_to_kyc_due'])} days.", [c["evidence_id"]]))
+        else:
+            findings.append(_f(f"The KYC review is due in {cl['days_to_kyc_due']} days.", [c["evidence_id"]]))
+    peer = _first(by, "peers.kyc_status")
+    if peer and peer["status"] == "ok":
+        findings.append(_f(f"The KYC peer agent ({peer['data']['peer']}, mock) reports: {peer['data']['kyc_status']}.", [peer["evidence_id"]], "low"))
+    if rel:
+        findings.append(_f("Related-party data was unavailable, so no related parties are listed and none are inferred.",
+                           [rel["evidence_id"], *( [per["evidence_id"]] if per else [])], "high"))
+    if conc and conc["data"] and conc["data"].get("single_names"):
+        s = conc["data"]["single_names"][0]
+        findings.append(_f(f"The largest single-name exposure is {s['name']} at {s['share_pct']:.2f}% of {conc['data']['denominator_label']}.",
+                           [conc["evidence_id"]]))
+    if liq and liq["data"] and liq["status"] == "ok":
+        d = liq["data"]
+        if d["shortfall_usd"] > 0:
+            findings.append(_f(f"Daily-liquid assets fall short of needs within {d['horizon_days']} days by {d['shortfall_usd']:,.0f} USD.", [liq["evidence_id"]]))
+        elif d["needs_total_usd"]:
+            findings.append(_f(f"Daily-liquid assets cover needs within {d['horizon_days']} days {d['coverage_ratio']:.2f} times.", [liq["evidence_id"]]))
+    for r in by.get("analytics.credit_ltv", []):
+        d = r["data"]
+        if d:
+            state = "above" if d["breached"] else "below"
+            findings.append(_f(f"Facility {d['facility_id']} LTV is {d['ltv_pct']:.2f}%, {state} its {d['trigger_pct']:.2f}% trigger.", [r["evidence_id"]]))
+    for ch in _children(results):
+        for cf in ch["findings"][:1]:
+            findings.append(_f(f"Portfolio analysis of {ch['subject']}: {cf['claim']}", cf["evidence_ids"], "medium"))
+    return _final(findings, f"Relationship analysis of {cid}.", mode, (conc or c or {}).get("evidence_id"))
+
+
+# ---- follow-up -------------------------------------------------------------------------
+def _follow_up(mode, question, results):
+    q = question.lower()
+    by = _by_tool(results)
+    findings = []
+    if "concentration" in q and "analytics.concentration" in by:
+        r = by["analytics.concentration"][0]
+        s = (r["data"].get("single_names") or [None])[0]
+        if s:
+            findings.append(_f(f"Earlier analysis: the largest single-name exposure is {s['name']} at {s['share_pct']:.2f}%.", [r["evidence_id"]]))
+    elif "liquidity" in q and "analytics.liquidity" in by:
+        r = by["analytics.liquidity"][0]
+        findings.append(_f(f"Earlier analysis: the liquidity shortfall is {r['data']['shortfall_usd']:,.0f} USD.", [r["evidence_id"]]))
+    if not findings:
+        r = next(x for x in results if "evidence_id" in x)
+        findings.append(_f(f"Earlier analysis ({r['tool']}) returned status {r['status']}.", [r["evidence_id"]], "medium"))
+    return _final(findings, "Follow-up answered from earlier evidence.", mode, findings[0]["evidence_ids"][0])

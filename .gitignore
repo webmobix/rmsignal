@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 *.db
+
+# Analysis output
+reports/
