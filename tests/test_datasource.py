@@ -63,3 +63,51 @@ def test_read_only(ds):
 def test_missing_database(tmp_path):
     with pytest.raises(FileNotFoundError, match="seed"):
         SqliteDataSource(tmp_path / "nope.db")
+
+
+def test_select_filter_and_paging(ds):
+    assert len(ds.select("clients")) == 20 == ds.count("clients")
+    mine = ds.select("portfolios", {"client_id": "CL-0001"})
+    assert mine and all(p.client_id == "CL-0001" for p in mine)
+    assert ds.count("portfolios", {"client_id": "CL-0001"}) == len(mine)
+    everything = ds.select("transactions")
+    assert ds.select("transactions", limit=5, offset=10) == everything[10:15]
+    assert ds.select("transactions", offset=len(everything)) == []
+
+
+def test_select_typed_filter_values(ds):
+    assert {c.pep_status for c in ds.select("clients", {"pep_status": "true"})} <= {True}
+    assert ds.count("clients", {"pep_status": "true"}) + ds.count(
+        "clients", {"pep_status": "false"}
+    ) == 20
+    c = ds.get_client("CL-0001")
+    hit = ds.select("clients", {"kyc_review_due": c.kyc_review_due.isoformat()})
+    assert c in hit
+    assert ds.select("clients", {"risk_tolerance_score": str(c.risk_tolerance_score)})
+
+
+def test_select_rejects_unknown_and_hostile_names(ds):
+    from rm_dashboard.data.datasource import UnknownColumnError, UnknownTableError
+    from rm_dashboard.data.schema import ValueParseError
+
+    with pytest.raises(UnknownTableError):
+        ds.select("nope")
+    with pytest.raises(UnknownTableError):
+        ds.count('clients"; DROP TABLE clients; --')
+    with pytest.raises(UnknownColumnError):
+        ds.select("clients", {"nope": "x"})
+    with pytest.raises(UnknownColumnError):
+        ds.select("clients", {'client_id" = 1 OR "1': "x"})
+    with pytest.raises(ValueParseError):
+        ds.select("clients", {"kyc_review_due": "not-a-date"})
+    assert ds.select("clients", {"client_id": "' OR '1'='1"}) == []
+    assert ds.count("clients") == 20
+
+
+def test_get_by_key_single_and_composite(ds):
+    assert ds.get_by_key("portfolios", ("PF-0001",)) == ds.get_portfolio("PF-0001")
+    assert ds.get_by_key("portfolios", ("PF-NOPE",)) is None
+    m = ds.list_mandates()[0]
+    assert ds.get_by_key("mandates", (m.mandate_code, m.asset_class)) == m
+    assert ds.get_by_key("mandates", (m.mandate_code,)) is None
+    assert ds.get_by_key("holdings", ("x",)) is None

@@ -4,9 +4,25 @@ import sqlite3
 from pathlib import Path
 
 from . import models
-from .schema import ENTITIES, Entity, columns, from_storage
+from .schema import ENTITIES, Entity, columns, from_storage, parse_text, to_storage
 
 _BY_TABLE = {e.table: e for e in ENTITIES}
+_BOOL_WORDS = {"true": "Y", "false": "N"}
+
+
+class UnknownTableError(LookupError):
+    """The name is not one of the dataset tables."""
+
+
+class UnknownColumnError(LookupError):
+    """The name is not a column of the table."""
+
+
+def entity_for(table: str) -> Entity:
+    try:
+        return _BY_TABLE[table]
+    except KeyError:
+        raise UnknownTableError(table) from None
 
 
 class SqliteDataSource:
@@ -39,6 +55,49 @@ class SqliteDataSource:
         sql += f" ORDER BY {order or 'rowid'}"
         rows = self.connection.execute(sql, params).fetchall()
         return [entity.model(*(from_storage(c, v) for c, v in zip(cols, row))) for row in rows]
+
+    def _filter(self, entity: Entity, filters: dict[str, str]) -> tuple[str, tuple]:
+        """WHERE clause for exact matches; names are whitelisted, values are bound."""
+        by_name = {c.name: c for c in columns(entity)}
+        clauses, params = [], []
+        for name, text in filters.items():
+            if name not in by_name:
+                raise UnknownColumnError(name)
+            col = by_name[name]
+            text = _BOOL_WORDS.get(text.lower(), text) if col.type is bool else text
+            clauses.append(f'"{name}" = ?')
+            params.append(to_storage(parse_text(col, text)))
+        return " AND ".join(clauses), tuple(params)
+
+    def select(
+        self, table: str, filters: dict[str, str] | None = None,
+        limit: int | None = None, offset: int = 0,
+    ) -> list:
+        """Rows of any table in storage order; filter values are source-form text.
+
+        Raises UnknownTableError, UnknownColumnError or schema.ValueParseError.
+        """
+        entity = entity_for(table)
+        where, params = self._filter(entity, filters or {})
+        rows = self._select(table, where, params)
+        return rows[offset:] if limit is None else rows[offset:offset + limit]
+
+    def count(self, table: str, filters: dict[str, str] | None = None) -> int:
+        entity = entity_for(table)
+        where, params = self._filter(entity, filters or {})
+        sql = f'SELECT COUNT(*) FROM "{table}"' + (f" WHERE {where}" if where else "")
+        return self.connection.execute(sql, params).fetchone()[0]
+
+    def get_by_key(self, table: str, key: tuple[str, ...]):
+        """The row whose primary key equals ``key`` (source-form text), or None.
+
+        A key of the wrong length, or a table without a primary key, matches nothing.
+        """
+        entity = entity_for(table)
+        if not entity.primary_key or len(key) != len(entity.primary_key):
+            return None
+        found = self.select(table, dict(zip(entity.primary_key, key)))
+        return found[0] if found else None
 
     def _get(self, table: str, key: str, value: str):
         found = self._select(table, f'"{key}" = ?', (value,))
