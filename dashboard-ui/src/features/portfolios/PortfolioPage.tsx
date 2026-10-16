@@ -14,6 +14,7 @@ import { PageHeader } from "#/components/PageHeader";
 import { EmptyNotice, StateBoundary } from "#/components/StateBoundary";
 import { fmtDate, fmtPct, fmtUsd } from "#/lib/format";
 import { MandateStatus } from "../clients/PortfolioList";
+import { BreachSection } from "./BreachSection";
 import { SectorSection } from "./SectorSection";
 
 type Detail = Schemas["PortfolioDetail"];
@@ -117,6 +118,7 @@ export function PortfolioPage() {
 											<MandateStatus
 												status={p.portfolio.mandate_status}
 												breaches={p.portfolio.breach_count}
+												reconciliation={p.portfolio.breach_reconciliation}
 											/>
 										),
 									},
@@ -189,6 +191,10 @@ export function PortfolioPage() {
 									</p>
 								) : null}
 							</section>
+							<BreachSection
+								exclusions={p.exclusion_breaches}
+								reconciliation={p.breach_reconciliation}
+							/>
 							<section className="mt-10" aria-labelledby="sector-h">
 								<h2 id="sector-h" className="mb-3 text-[22px]">
 									Sector exposure

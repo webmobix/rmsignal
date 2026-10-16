@@ -3,6 +3,7 @@
 from datetime import date
 
 from rm_dashboard.domain import ToolResult
+from rm_dashboard.mandate_reconciliation import BreachResult
 from rm_dashboard.reconciliation import NoteResult
 from rm_dashboard.reportsource import FlatFinding
 
@@ -42,7 +43,8 @@ def finalise(actions: list[Action], findings: dict[str, FlatFinding], notes: dic
     for a in merge(actions):
         results = [evidence[i] for i in dict.fromkeys(i for s in a.sources for i in s.evidence_ids) if i in evidence]
         contradicted = any(s.kind == "note" and notes[s.ref].verdict == "contradicted" for s in a.sources if s.ref in notes)
-        importance = apply_floor(a.importance, floor_for(a.category, results, contradicted_note=contradicted))
+        mandate = [(s.breach_kind, s.mandate_status) for s in a.sources if s.kind == "mandate" and s.mandate_status]
+        importance = apply_floor(a.importance, floor_for(a.category, results, contradicted_note=contradicted, mandate=mandate))
         texts = [findings[s.ref].claim for s in a.sources if s.kind == "finding" and s.ref in findings]
         due = due_date(results, texts, as_of)
         out.append(a.model_copy(update={
@@ -52,7 +54,12 @@ def finalise(actions: list[Action], findings: dict[str, FlatFinding], notes: dic
     return [a.model_copy(update={"rank": i}) for i, a in enumerate(out, start=1)]
 
 
-def not_actioned(actions: list[Action], notes: dict[str, NoteResult]) -> list[NotActioned]:
+def not_actioned(actions: list[Action], notes: dict[str, NoteResult],
+                 mandate: dict[str, BreachResult] | None = None) -> list[NotActioned]:
     used = {s.ref for a in actions for s in a.sources if s.kind == "note"}
-    return [NotActioned(note_id=n.note_id, rationale=n.rationale) for n in notes.values()
-            if n.verdict == "contradicted" and n.note_id not in used]
+    used_mandate = {s.ref for a in actions for s in a.sources if s.kind == "mandate"}
+    out = [NotActioned(note_id=n.note_id, rationale=n.rationale) for n in notes.values()
+           if n.verdict == "contradicted" and n.note_id not in used]
+    out += [NotActioned(note_id=m.ref, rationale=m.rationale, kind="mandate") for m in (mandate or {}).values()
+            if m.status == "contradicted" and m.ref not in used_mandate]
+    return out

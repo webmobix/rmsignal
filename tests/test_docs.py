@@ -31,7 +31,7 @@ MATRIX_ROLES = ("relationship_analyst", "portfolio_analyst", "instrument_analyst
                 "outlook_instrument")
 AGENT_FIELDS = ("Purpose", "Setup", "Subject and trigger", "Inputs and tools", "Delegation and callers", "Output and file",
                 "Checks after the model", "Model used")
-OTHER_AGENT_ROLES = ("note_reconciler", "client_actions", "rm_overview_summary", "outlook_analyst", "outlook_instrument")
+OTHER_AGENT_ROLES = ("note_reconciler", "mandate_reconciler", "client_actions", "rm_overview_summary", "outlook_analyst", "outlook_instrument")
 
 
 def _section(text: str, start: str, end: str | None = None) -> str:

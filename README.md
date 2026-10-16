@@ -67,7 +67,8 @@ from a deterministic tool, every finding cites evidence ids, and every run is re
 | `a2a` | Agent Cards and servers for each analyst, client, mock KYC peer | |
 | `api` | read-only HTTP API: raw tables (`/api/sources`) and the dashboard read endpoints | [docs/api.md](docs/api.md) |
 | `dashboard-ui/` | RMSignal web dashboard (TanStack Start) on top of the API | [dashboard-ui/README.md](dashboard-ui/README.md) |
-| `runners` | CLIs: batch analysis, reconcile, actions, overview | [docs/methods.md](docs/methods.md) (all methods) |
+| `mandate_reconciliation` | gives each computed mandate, position-limit and exclusion breach a status from what the RM's notes say: `no_note`, `acknowledged`, `client_directed`, `contradicted` | [docs/agents.md](docs/agents.md) |
+| `runners` | CLIs: batch analysis, reconcile, mandate reconcile, actions, overview | [docs/methods.md](docs/methods.md) (all methods) |
 
 ### Run a batch
 
@@ -90,7 +91,19 @@ uv run rm-dashboard-reconcile --as-of 2026-08-26 --db rm.db --reports-dir report
 
 Reads the batch output of that date and writes `reports/<as-of>/reconciliation/<client>.json`: for each RM note dated
 on or before `--as-of`, a verdict (`consistent`, `contradicted`, `unverifiable`) against the client's report, with the
-evidence on both sides. Notes only; mandate reconciliation is a separate, later stage. See [docs/agents.md](docs/agents.md).
+evidence on both sides. Notes only; mandate reconciliation is the next stage. See [docs/agents.md](docs/agents.md).
+
+### Reconcile mandate breaches with RM notes
+
+```sh
+uv run rm-dashboard-mandate-reconcile --as-of 2026-08-26 --db rm.db --reports-dir reports [--clients CL-0005,CL-0007]
+```
+
+Run after `rm-dashboard-reconcile` and before `rm-dashboard-actions`. Reads the computed breaches in the batch evidence
+(asset-class band, single-position limit and sustainability exclusion) and the notes dated on or before `--as-of`, and
+writes `reports/<as-of>/mandate-reconciliation/<client>.json`: one status per breach (`no_note`, `acknowledged`,
+`client_directed`, `contradicted`) with the quoted notes. A waiver in a note is shown as a claim and never removes a
+breach. See [docs/agents.md](docs/agents.md).
 
 ### Derive next actions per client
 
@@ -98,9 +111,11 @@ evidence on both sides. Notes only; mandate reconciliation is a separate, later 
 uv run rm-dashboard-actions --as-of 2026-08-26 --db rm.db --reports-dir reports [--clients CL-0001,CL-0017]
 ```
 
-Reads the batch output (and `reconciliation/` when present) and writes `reports/<as-of>/actions/<client>.json`: for each
+Reads the batch output (and `reconciliation/` and `mandate-reconciliation/` when present) and writes `reports/<as-of>/actions/<client>.json`: for each
 client a short list of actions saying what to do and why, with category, importance (rubric floors), a time horizon
-derived from dates in the evidence, and links to the findings and notes they rest on. See [docs/agents.md](docs/agents.md).
+derived from dates in the evidence, and links to the findings, notes and mandate-reconciliation results they rest on. The
+status of a breach (`mandate-reconciliation/` when present) sets the importance floor and the wording of its `mandate_drift`
+action. See [docs/agents.md](docs/agents.md).
 
 ### RM overview
 
@@ -223,5 +238,5 @@ outlook. It changes only when new data has arrived; otherwise the previous views
 outlooks stay as the reference. With `--instruments` or by default for every held instrument, it also writes
 `reports/<as-of>/outlook/instruments/<id>.json`: one outlook per instrument, computed once and shared by all clients, in the
 context of its peers, the events that bear on it and the market outlook. Run it before the client analysis: the pipeline order is
-`rm-dashboard-outlook` -> `rm-dashboard-analyse` -> `rm-dashboard-reconcile` -> `rm-dashboard-actions` -> `rm-dashboard-overview`, and the client
+`rm-dashboard-outlook` -> `rm-dashboard-analyse` -> `rm-dashboard-reconcile` -> `rm-dashboard-mandate-reconcile` -> `rm-dashboard-actions` -> `rm-dashboard-overview`, and the client
 analysis reads the outlooks (a missing outlook is a gap, not a failure). See [docs/agents.md](docs/agents.md).

@@ -59,3 +59,75 @@ def mandate_drift(positions: pl.DataFrame, bands: pl.DataFrame, *, service_model
         "applicable": True, "denominator": total, "bands": rows, "breaches": breaches,
         "single_position_breaches": position_breaches, "max_single_position_pct": limit,
     }, METHOD_MANDATE, flags=flags)
+
+
+METHOD_EXCLUSIONS = register(
+    "exclusion_breaches",
+    "A mandate is bound by exclusions when its mandate_notes state 'binding exclusions'. In a bound "
+    "managed portfolio, every held instrument flagged sustainability_excluded is a breach (held "
+    "'direct'); a structured product not itself flagged is looked through to its referenced "
+    "underlyings and each underlying matching a flagged instrument by normalised name is a breach "
+    "(held 'look_through', the product named; a basket attributes value equally to each underlying, "
+    "an assumption). weight_pct = value / portfolio total x 100 (portfolio base currency). Flags in "
+    "mandates without binding exclusions are not breaches; custody portfolios are not measured.",
+)
+
+BINDING_EXCLUSIONS_TEXT = "binding exclusions"
+
+
+def exclusions_bound(mandate_notes: str | None) -> bool:
+    return BINDING_EXCLUSIONS_TEXT in (mandate_notes or "").lower()
+
+
+def exclusion_breaches(positions: pl.DataFrame, instruments: pl.DataFrame, *, service_model: str,
+                       mandate_notes: str | None, value_col: str = "market_value_base") -> Calc:
+    """``positions``: instrument_id, instrument_name, asset_class, ``value_col``;
+    ``instruments``: instrument_id, instrument_name, asset_class, underlying_reference, sustainability_excluded."""
+    from .concentration import normalise_name, parse_underlyings
+
+    if service_model in CUSTODY_MODELS:
+        return Calc("exclusion_breaches", {"applicable": False}, METHOD_EXCLUSIONS, "ok",
+                    f"service model {service_model!r}: not measured against a mandate")
+    if not exclusions_bound(mandate_notes):
+        return Calc("exclusion_breaches", {"applicable": True, "bound": False, "breaches": []}, METHOD_EXCLUSIONS)
+    total = float(positions[value_col].sum()) if positions.height else 0.0
+    if total <= 0:
+        return Calc("exclusion_breaches", {"applicable": True, "bound": True}, METHOD_EXCLUSIONS,
+                    "insufficient_data", "no positions")
+    inst = {r["instrument_id"]: r for r in instruments.iter_rows(named=True)}
+    excluded_by_name = {normalise_name(r["instrument_name"]): r for r in inst.values()
+                        if r["sustainability_excluded"] and r["asset_class"] != "Structured Products"}
+    flags: list[QualityFlag] = []
+    breaches: list[dict] = []
+    basket = False
+    for r in positions.iter_rows(named=True):
+        i = inst.get(r["instrument_id"], {})
+        v = r[value_col]
+        if i.get("sustainability_excluded"):
+            breaches.append({"instrument_id": r["instrument_id"], "instrument_name": r["instrument_name"],
+                             "held": "direct", "via_instrument_id": None, "via_instrument_name": None,
+                             "value": v, "weight_pct": v / total * 100})
+            continue
+        if r["asset_class"] != "Structured Products":
+            continue
+        names, ok = parse_underlyings(i.get("underlying_reference"), r["instrument_name"])
+        if not ok:
+            flags.append(QualityFlag(code="unresolved_underlying", subject=r["instrument_id"],
+                                     message="underlying names not identifiable from the reference; exclusions not checked through this product"))
+            continue
+        basket = basket or len(names) > 1
+        for n in names:
+            hit = excluded_by_name.get(normalise_name(n))
+            if hit:
+                part = v / len(names)
+                breaches.append({"instrument_id": hit["instrument_id"], "instrument_name": hit["instrument_name"],
+                                 "held": "look_through", "via_instrument_id": r["instrument_id"],
+                                 "via_instrument_name": r["instrument_name"], "value": part,
+                                 "weight_pct": part / total * 100})
+    if basket:
+        flags.append(QualityFlag(code="basket_attribution_assumption",
+                                 message="basket products attribute value equally to each underlying; actual sensitivity differs"))
+    breaches.sort(key=lambda b: (-b["weight_pct"], b["instrument_id"], b["via_instrument_id"] or ""))
+    return Calc("exclusion_breaches", {"applicable": True, "bound": True, "denominator": total,
+                                       "denominator_label": "portfolio value in base currency",
+                                       "breaches": breaches}, METHOD_EXCLUSIONS, flags=flags)

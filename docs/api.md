@@ -119,7 +119,11 @@ given beside it. Profit and loss stays in the portfolio base currency (`pnl_base
 | `facilities` | credit facilities with the current point, the gap to the margin-call trigger (`ltv_gap_pp`) and the LTV history |
 
 `portfolios[]` has one entry per portfolio: `aum_usd`, `aum_base`, `change_pct` against the previous snapshot, `mandate_status`
-(`in_band`, `out_of_band`, or `no_mandate` for custody accounts, which are not measured against a mandate) and `breach_count`.
+(`in_band`, `out_of_band`, or `no_mandate` for custody accounts, which are not measured against a mandate) and `breach_count`
+(band, single-position and exclusion breaches). `breach_reconciliation[]` lists, from the persisted
+`mandate-reconciliation/<client>.json`, each breach of the portfolio as `kind` (`band`, `position`, `exclusion`), `key`, `status`
+(`no_note`, `acknowledged`, `client_directed`, `contradicted`) and `note_ids`; it is empty, with a gap
+(`no mandate reconciliation persisted for <client>`), when no file exists for the date.
 A client with one portfolio has a list of one and consolidated figures equal to it.
 `actions` (a client without persisted actions has a gap whose description starts with `actions_missing`), `findings` (flattened report findings with `client_id`, `portfolio_id`, `evidence_ids`) and `notes` follow. A note
 carries the reconciliation `verdict` (`consistent`, `contradicted`, `unverifiable`) with its `finding_refs` and `evidence_ids`;
@@ -138,6 +142,12 @@ when the weight is outside them (`breach` says which side). `position_limit` has
 largest position, and the positions over the limit (only instruments flagged `concentration_limit_applies` are compared). A custody
 account has no bands and says why. `holdings` are the positions at the effective snapshot, `facilities` those secured on the
 portfolio, with the LTV history.
+
+`exclusion_breaches[]` lists the instruments the mandate's binding exclusions rule out (`instrument_id`, `instrument_name`, `held`
+= `direct` or `look_through` with `via_instrument_*`, `value`, `weight_pct`) with their reconciliation `status` and `note_ids`;
+it is empty for mandates without binding exclusions and for custody accounts. `breach_reconciliation[]` repeats the portfolio's
+breach statuses and adds, per breach, its `description`, the `rationale`, `waiver_claimed` and the quoted `notes`
+(`note_id`, `note_date`, `quote`). A waiver is the RM's claim: the breach stays listed and `out_of_band`.
 
 `sector_exposure` has `denominator` (the portfolio value in base currency) with its `denominator_label`, and two lists of groups,
 `direct` (each position by its instrument's sector) and `look_through` (structured products replaced by their underlyings, each

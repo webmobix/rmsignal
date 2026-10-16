@@ -466,3 +466,68 @@ def test_sector_basket_equal_split_and_sums():
 def test_sector_empty_is_insufficient():
     from rm_dashboard.analytics import sector
     assert sector.sector_look_through(pl.DataFrame(), pl.DataFrame()).status == "insufficient_data"
+
+
+# ---- exclusion breaches -------------------------------------------------------------
+BOUND = "Balanced allocation with binding exclusions: thermal coal, tobacco."
+
+
+def _excl_inputs(held):
+    inst = pl.DataFrame({
+        "instrument_id": ["EN", "OK", "DEF", "SP", "SPX"],
+        "instrument_name": ["Energy Majors Fund", "Bank Corp", "Defence Fund", "Note ref. Energy Majors Fund, 12M", "Basket note"],
+        "asset_class": ["Equity", "Equity", "Equity", "Structured Products", "Structured Products"],
+        "underlying_reference": [None, None, None, None, "Worst-of basket: Energy Majors Fund ADR / Bank Corp / Nobody Ltd"],
+        "sustainability_excluded": [True, False, True, False, False]})
+    names = dict(inst.select("instrument_id", "instrument_name").iter_rows())
+    classes = dict(inst.select("instrument_id", "asset_class").iter_rows())
+    pos = pl.DataFrame({"instrument_id": [i for i, _ in held], "instrument_name": [names[i] for i, _ in held],
+                        "asset_class": [classes[i] for i, _ in held], "v": [v for _, v in held]})
+    return pos, inst
+
+
+def test_exclusion_direct_holding_in_bound_mandate():
+    pos, inst = _excl_inputs([("EN", 11.0), ("OK", 80.0), ("DEF", 9.0)])
+    c = mandate.exclusion_breaches(pos, inst, service_model="Discretionary", mandate_notes=BOUND, value_col="v")
+    assert [(b["instrument_id"], b["held"]) for b in c.data["breaches"]] == [("EN", "direct"), ("DEF", "direct")]
+    assert c.data["breaches"][0]["weight_pct"] == pytest.approx(11.0)
+    assert c.data["denominator"] == pytest.approx(100.0)
+
+
+def test_exclusion_flag_in_unbound_mandate_is_not_a_breach():
+    pos, inst = _excl_inputs([("DEF", 20.0), ("OK", 80.0)])
+    c = mandate.exclusion_breaches(pos, inst, service_model="Advisory", mandate_notes="Balanced allocation.", value_col="v")
+    assert c.data["breaches"] == [] and c.data["bound"] is False
+
+
+def test_exclusion_look_through_names_the_product():
+    pos, inst = _excl_inputs([("SP", 10.0), ("SPX", 30.0), ("OK", 60.0)])
+    c = mandate.exclusion_breaches(pos, inst, service_model="Discretionary", mandate_notes=BOUND, value_col="v")
+    by = {(b["instrument_id"], b["via_instrument_id"]): b for b in c.data["breaches"]}
+    assert set(by) == {("EN", "SP"), ("EN", "SPX")}
+    assert by[("EN", "SP")]["held"] == "look_through" and by[("EN", "SP")]["weight_pct"] == pytest.approx(10.0)
+    assert by[("EN", "SPX")]["weight_pct"] == pytest.approx(10.0)  # basket of three: one third of 30
+    assert any(f.code == "basket_attribution_assumption" for f in c.flags)
+
+
+def test_exclusion_custody_not_applicable_and_weights_of_total():
+    pos, inst = _excl_inputs([("EN", 50.0), ("OK", 50.0)])
+    c = mandate.exclusion_breaches(pos, inst, service_model="Custody", mandate_notes=BOUND, value_col="v")
+    assert c.data == {"applicable": False} and "mandate" in c.reason
+    c2 = mandate.exclusion_breaches(pos, inst, service_model="Advisory", mandate_notes=BOUND, value_col="v")
+    assert c2.data["breaches"][0]["weight_pct"] == pytest.approx(50.0)
+
+
+def test_exclusion_breaches_seeded_data_only_pf0007(pit_repo):
+    as_of = SNAPS[-1]
+    pfs = pit_repo.portfolios(as_of=as_of).frame
+    inst = pit_repo.instruments(as_of=as_of).frame
+    found = {}
+    for r in pfs.iter_rows(named=True):
+        bands = pit_repo.mandates(as_of=as_of, mandate_code=r["mandate_code"]).frame if r["mandate_code"] else pl.DataFrame()
+        notes = bands["mandate_notes"][0] if bands.height else None
+        h = pit_repo.holdings(as_of=as_of, portfolio_id=r["portfolio_id"]).frame
+        c = mandate.exclusion_breaches(h, inst, service_model=r["service_model"], mandate_notes=notes)
+        if c.data.get("breaches"):
+            found[r["portfolio_id"]] = {b["instrument_name"] for b in c.data["breaches"]}
+    assert found == {"PF-0007": {"Global Energy Majors Equity Fund", "Sunrise Palm Resources Ltd"}}

@@ -6,7 +6,7 @@ INSTRUMENT_ANALYST = (
 
 PORTFOLIO_ANALYST = (
     "portfolios.get", "positions.list", "instruments.get", "market.snapshot", "events.list",
-    "analytics.weights", "analytics.exposure", "analytics.mandate_drift", "analytics.pnl", "analytics.change",
+    "analytics.weights", "analytics.exposure", "analytics.mandate_drift", "analytics.exclusion_breaches", "analytics.pnl", "analytics.change",
     "outlook.market", "outlook.instrument",
 )
 

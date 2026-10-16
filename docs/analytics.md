@@ -47,6 +47,10 @@ Bond quantity is in units of 100 nominal; nominal = quantity x 100 and market va
 
 Liquid assets (market value in USD) are summed by liquidity tier. Needs and uncalled commitments whose due window overlaps (as_of, as_of + horizon_days] are converted to USD at the rate of the effective snapshot and summed. Aspirational needs are excluded and listed separately. A cash need that restates the commitments replaces them (no double count). Shortfall = max(0, needs - Daily-tier assets); coverage = Daily assets / needs. Each item keeps its stated certainty; amounts are not probability-weighted.
 
+## exclusion_breaches
+
+A mandate is bound by exclusions when its mandate_notes state 'binding exclusions'. In a bound managed portfolio, every held instrument flagged sustainability_excluded is a breach (held 'direct'); a structured product not itself flagged is looked through to its referenced underlyings and each underlying matching a flagged instrument by normalised name is a breach (held 'look_through', the product named; a basket attributes value equally to each underlying, an assumption). weight_pct = value / portfolio total x 100 (portfolio base currency). Flags in mandates without binding exclusions are not breaches; custody portfolios are not measured.
+
 ## mandate_drift
 
 Asset-class weight = class value / portfolio total x 100 (portfolio base currency). Each weight is compared with the mandate min/target/max; gap_pp is the distance beyond the nearest breached band edge, drift_pp the distance from target. Positions flagged concentration_limit_applies are compared with max_single_position_pct. Custody portfolios are excluded from this comparison (they remain in client totals).

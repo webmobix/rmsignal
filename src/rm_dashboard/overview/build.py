@@ -47,6 +47,8 @@ def _links_broken(a: ClientActions, source: OverviewSource, as_of: date) -> list
     findings = source.findings(as_of, a.client_id)
     rec = source.reconciliation(as_of, a.client_id)
     notes = {n.note_id for n in rec.results} if rec else set()
+    mrec = source.mandate_reconciliation(as_of, a.client_id)
+    mandate = {r.ref: r for r in mrec.results} if mrec else {}
     broken = []
     for act in a.actions:
         for s in act.sources:
@@ -58,6 +60,12 @@ def _links_broken(a: ClientActions, source: OverviewSource, as_of: date) -> list
                     broken.append(f"{s.ref}: report path {s.report_path} does not match")
                 elif not set(s.evidence_ids) <= set(f.evidence_ids):
                     broken.append(f"{s.ref}: evidence ids differ from the finding's")
+            elif s.kind == "mandate":
+                r = mandate.get(s.ref)
+                if r is None:
+                    broken.append(f"{s.ref}: mandate result not found in the mandate reconciliation")
+                elif s.mandate_status != r.status or not set(s.evidence_ids) <= {r.evidence_id}:
+                    broken.append(f"{s.ref}: status or evidence differs from the mandate reconciliation")
             elif s.ref not in notes:
                 broken.append(f"{s.ref}: note not found in the reconciliation")
     return broken

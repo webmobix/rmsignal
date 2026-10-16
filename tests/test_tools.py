@@ -245,3 +245,13 @@ def test_tool_inventory_is_the_defined_set(registry):
     assert set(registry.names()) == {s.name for s in DOMAIN_TOOLS + ANALYTICS_TOOLS + PEER_TOOLS + OUTLOOK_TOOLS}
     for agent, names in ALLOWLISTS.items():
         assert {s.name for s in registry.toolbox(agent, names).specs()} == set(names)
+
+
+def test_exclusion_breaches_tool_has_evidence_id(registry):
+    r = call(registry, "analytics.exclusion_breaches", portfolio_id="PF-0007")
+    assert r.status == "ok" and r.evidence_id.startswith("ev_")
+    assert {b["instrument_id"] for b in r.data["breaches"]} == {"SYN-EQ-0008", "SYN-ST-0105"}
+    assert r.data["portfolio_id"] == "PF-0007"
+    assert call(registry, "analytics.exclusion_breaches", portfolio_id="PF-0002").data["applicable"] is False
+    assert call(registry, "analytics.exclusion_breaches", portfolio_id="PF-0001").data["breaches"] == []
+    assert "analytics.exclusion_breaches" in ALLOWLISTS["portfolio_analyst"]

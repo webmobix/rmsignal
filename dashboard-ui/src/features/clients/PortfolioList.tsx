@@ -6,7 +6,7 @@ import {
 } from "#/components/DataTable";
 import { IdLink } from "#/components/IdLink";
 import { fmtPct, fmtUsd } from "#/lib/format";
-import { MANDATE_LABEL } from "./status";
+import { MANDATE_LABEL, worstBreachLabel } from "./status";
 
 type Row = Schemas["ClientDetail"]["portfolios"][number];
 const helper = createColumnHelper<typeof tableFeaturesConfig, Row>();
@@ -14,10 +14,14 @@ const helper = createColumnHelper<typeof tableFeaturesConfig, Row>();
 export function MandateStatus({
 	status,
 	breaches,
+	reconciliation,
 }: {
 	status: string;
 	breaches?: number;
+	reconciliation?: Row["breach_reconciliation"];
 }) {
+	const label =
+		status === "out_of_band" ? worstBreachLabel(reconciliation) : null;
 	const tone =
 		status === "out_of_band"
 			? "text-alert"
@@ -28,6 +32,12 @@ export function MandateStatus({
 		<span className={`text-xs font-semibold ${tone}`}>
 			{MANDATE_LABEL[status] ?? status}
 			{status === "out_of_band" && breaches ? ` · ${breaches}` : ""}
+			{label ? (
+				<span className="font-medium text-ink-2" data-testid="breach-label">
+					{" · "}
+					{label}
+				</span>
+			) : null}
 		</span>
 	);
 }
@@ -74,6 +84,7 @@ const columns = helper.columns([
 			<MandateStatus
 				status={row.original.mandate_status}
 				breaches={row.original.breach_count}
+				reconciliation={row.original.breach_reconciliation}
 			/>
 		),
 	}),

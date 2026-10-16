@@ -14,6 +14,7 @@ from rm_dashboard.domain import Gap
 from rm_dashboard.llmlog import llm_config
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyDenied, PolicyEngine, PolicyEscalated, RunContext
 from rm_dashboard.policy.engine import COMPLIANCE_CONTENT, EVIDENCE_PROVENANCE
+from rm_dashboard.mandate_reconciliation import BreachResult, MandateReconciliation
 from rm_dashboard.reconciliation import NoteResult, Reconciliation
 from rm_dashboard.reportsource import FolderReportSource, flatten
 from rm_dashboard.tools import ToolRegistry
@@ -32,12 +33,21 @@ def load_reconciliation(source: FolderReportSource, as_of: date, client_id: str)
     return Reconciliation.model_validate_json(p.read_text()) if p.is_file() else None
 
 
-def build_input(client_id: str, as_of: date, findings, notes: list[NoteResult], quality_flags: list[str]) -> str:
+def load_mandate_reconciliation(source: FolderReportSource, as_of: date, client_id: str) -> MandateReconciliation | None:
+    p = source.run_dir(as_of) / "mandate-reconciliation" / f"{client_id}.json"
+    return MandateReconciliation.model_validate_json(p.read_text()) if p.is_file() else None
+
+
+def build_input(client_id: str, as_of: date, findings, notes: list[NoteResult], quality_flags: list[str],
+                mandate: list[BreachResult] | None = None) -> str:
     payload = {
         "client_id": client_id, "as_of": as_of.isoformat(),
         "findings": [{"ref": f.ref, "claim": f.claim, "confidence": f.confidence} for f in findings],
         "notes": [{"note_id": n.note_id, "note_date": n.note_date.isoformat(), "verdict": n.verdict,
                    "rationale": n.rationale, "quote": n.note_quote} for n in notes],
+        "mandate": [{"ref": m.ref, "portfolio_id": m.portfolio_id, "kind": m.kind, "status": m.status, "breach": m.description,
+                     "note_ids": m.note_ids, "waiver_claimed": m.waiver_claimed, "rationale": m.rationale,
+                     "notes": [{"note_id": n.note_id, "quote": n.quote} for n in m.notes]} for m in (mandate or [])],
         "quality_flags": quality_flags,
     }
     return (f"Decide the next actions for client {client_id} as of {as_of.isoformat()}.\n"
@@ -51,6 +61,7 @@ def derive_actions(registry: ToolRegistry, client_id: str, *, as_of: date, sourc
     base = dict(client_id=client_id, as_of=as_of)
     gaps: list[Gap] = []
     notes: dict[str, NoteResult] = {}
+    mandate: dict[str, BreachResult] = {}
     started = False
     try:
         register_people(run, registry.ctx.repo, as_of)
@@ -66,18 +77,24 @@ def derive_actions(registry: ToolRegistry, client_id: str, *, as_of: date, sourc
             gaps.append(Gap(kind="other", subject=client_id, description="notes were not reconciled: no reconciliation exists for this client and date"))
         else:
             notes = {n.note_id: n for n in rec.results}
+        mrec = load_mandate_reconciliation(source, as_of, client_id)
+        if mrec is None:
+            gaps.append(Gap(kind="other", subject=client_id, description="mandate breaches were not reconciled with notes: "
+                            "no mandate reconciliation exists for this client and date; every mandate action is treated as no_note"))
+        else:
+            mandate = {m.ref: m for m in mrec.results}
         flat = flatten(report)
         findings = {f.ref: f for f in flat}
         if not flat and not notes:
             gaps.append(Gap(kind="no_data", subject=client_id, description="the report has no findings to derive actions from"))
             return _finish(run, ClientActions(status="partial", gaps=gaps, **base))
-        raw, err = _ask(run, model, build_input(client_id, as_of, flat, list(notes.values()), [f.message for f in report.flags]))
+        raw, err = _ask(run, model, build_input(client_id, as_of, flat, list(notes.values()), [f.message for f in report.flags], list(mandate.values())))
         if err:
             gaps.append(Gap(kind="agent_error", description=err, subject=ROLE))
-        out = guard_actions(raw, findings, notes)
+        out = guard_actions(raw, findings, notes, mandate)
         gaps += out.gaps
         actions = finalise(out.actions, findings, notes, evidence, as_of)
-        pending = not_actioned(actions, notes)
+        pending = not_actioned(actions, notes, mandate)
         gaps = _checkpoints(run, gaps, len(actions))
         restore = run.pseudonymiser.restore
         actions = [a.model_copy(update={"title": restore(a.title), "what": restore(a.what), "why": restore(a.why)}) for a in actions]

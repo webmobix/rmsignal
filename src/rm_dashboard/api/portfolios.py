@@ -18,6 +18,41 @@ from .models import HasGaps, gap
 router = APIRouter(prefix="/api", tags=["portfolios"])
 
 MandateStatus = Literal["in_band", "out_of_band", "no_mandate"]
+BreachStatus = Literal["no_note", "acknowledged", "client_directed", "contradicted"]
+BreachKind = Literal["band", "position", "exclusion"]
+
+
+class NoteQuote(BaseModel):
+    note_id: str
+    note_date: date
+    quote: str
+
+
+class BreachReconciliation(BaseModel):
+    """What the RM's notes say about one computed breach. The portfolio list carries ids only; the detail adds the quotes."""
+
+    portfolio_id: str
+    kind: BreachKind
+    key: str
+    status: BreachStatus
+    note_ids: list[str] = []
+    description: str = ""
+    rationale: str = ""
+    waiver_claimed: bool = False
+    notes: list[NoteQuote] = []
+
+
+class ExclusionBreach(BaseModel):
+    instrument_id: str
+    instrument_name: str
+    held: Literal["direct", "look_through"]
+    via_instrument_id: str | None = None
+    via_instrument_name: str | None = None
+    value: float
+    weight_pct: float
+    key: str
+    status: BreachStatus = "no_note"
+    note_ids: list[str] = []
 
 
 class PortfolioRow(BaseModel):
@@ -34,6 +69,7 @@ class PortfolioRow(BaseModel):
     change_pct: float | None = None
     mandate_status: MandateStatus
     breach_count: int = 0
+    breach_reconciliation: list[BreachReconciliation] = []
 
 
 class AumPoint(BaseModel):
@@ -129,6 +165,8 @@ class PortfolioDetail(HasGaps):
     aum_history: list[AumPoint]
     bands: list[Band]
     position_limit: PositionLimit
+    exclusion_breaches: list[ExclusionBreach] = []
+    breach_reconciliation: list[BreachReconciliation] = []
     holdings: list[HoldingRow]
     sector_exposure: SectorExposure
     facilities: list[Facility]
@@ -150,6 +188,36 @@ def mandate_check(ctx: ReadContext, as_of: date, pf: dict, holdings: pl.DataFram
     return ("out_of_band" if out else "in_band"), d, []
 
 
+def exclusion_check(ctx: ReadContext, as_of: date, pf: dict, holdings: pl.DataFrame) -> list[dict]:
+    """Exclusion breaches of one managed portfolio (computed live, like the band check)."""
+    if pf["service_model"] == "Custody" or holdings.is_empty():
+        return []
+    bands = ctx.repo.mandates(as_of=as_of, mandate_code=pf["mandate_code"]).frame
+    notes = bands["mandate_notes"][0] if bands.height else None
+    calc = mandate_calc.exclusion_breaches(holdings, ctx.repo.instruments(as_of=as_of).frame,
+                                           service_model=pf["service_model"], mandate_notes=notes)
+    return calc.data.get("breaches", []) if calc.status == "ok" else []
+
+
+def breach_key(b: dict) -> str:
+    return b["instrument_id"] + (f"@{b['via_instrument_id']}" if b["held"] == "look_through" else "")
+
+
+def reconciliation_by_portfolio(ctx: ReadContext, as_of: date, client_id: str, *, detail: bool) -> dict[str, list[BreachReconciliation]] | None:
+    """Persisted mandate reconciliation of the client grouped by portfolio; ``None`` when none was persisted."""
+    rec = ctx.overviews.mandate_reconciliation(as_of, client_id)
+    if rec is None:
+        return None
+    out: dict[str, list[BreachReconciliation]] = {}
+    for r in rec.results:
+        out.setdefault(r.portfolio_id, []).append(BreachReconciliation(
+            portfolio_id=r.portfolio_id, kind=r.kind, key=r.key, status=r.status, note_ids=r.note_ids,
+            waiver_claimed=r.waiver_claimed,
+            **({"description": r.description, "rationale": r.rationale,
+                "notes": [NoteQuote(note_id=n.note_id, note_date=n.note_date, quote=n.quote) for n in r.notes]} if detail else {})))
+    return out
+
+
 def portfolio_rows(ctx: ReadContext, as_of: date, client_id: str) -> tuple[list[PortfolioRow], list]:
     eff, prev, snaps = snapshots_at(ctx, as_of)
     pfs = ctx.repo.portfolios(as_of=as_of, client_id=client_id).frame
@@ -158,6 +226,7 @@ def portfolio_rows(ctx: ReadContext, as_of: date, client_id: str) -> tuple[list[
         return [], gaps
     h_all = holdings_over_time(ctx, [s for s in (eff, prev) if s], client_id=client_id)
     now, before = at(h_all, eff), at(h_all, prev)
+    recon = reconciliation_by_portfolio(ctx, as_of, client_id, detail=False)
     rows = []
     for pf in pfs.sort("portfolio_id").iter_rows(named=True):
         cur = now.filter(pl.col("portfolio_id") == pf["portfolio_id"]) if now.height else now
@@ -168,12 +237,19 @@ def portfolio_rows(ctx: ReadContext, as_of: date, client_id: str) -> tuple[list[
         status, data, g = mandate_check(ctx, as_of, pf, cur)
         gaps += g
         breaches = len(data["breaches"]) + len(data["single_position_breaches"]) if data else 0
+        excluded = exclusion_check(ctx, as_of, pf, cur)
+        breaches += len(excluded)
+        if excluded and status == "in_band":
+            status = "out_of_band"
         rows.append(PortfolioRow(
             portfolio_id=pf["portfolio_id"], portfolio_name=pf["portfolio_name"], mandate_code=pf["mandate_code"],
             mandate_name=pf["mandate_name"], service_model=pf["service_model"], base_currency=pf["base_currency"],
             aum_usd=usd, aum_base=float(cur["market_value_base"].sum()) if cur.height else 0.0,
             previous_aum_usd=before_usd, change_usd=d_usd, change_pct=d_pct,
-            mandate_status=status, breach_count=breaches))
+            mandate_status=status, breach_count=breaches,
+            breach_reconciliation=(recon or {}).get(pf["portfolio_id"], [])))
+    if recon is None and any(r.breach_count for r in rows):
+        gaps.append(gap(f"no mandate reconciliation persisted for {client_id}", client_id))
     return rows, gaps
 
 
@@ -219,6 +295,17 @@ def get_portfolio(ctx: Ctx, as_of: AsOf, portfolio_id: str) -> PortfolioDetail:
         history = [AumPoint(snapshot_date=r["snapshot_date"], aum_usd=r["usd"], aum_base=r["base"]) for r in agg.iter_rows(named=True)]
     status, data, g = mandate_check(ctx, as_of, pf, cur)
     gaps += g
+    recon = reconciliation_by_portfolio(ctx, as_of, client_id, detail=True)
+    mine = (recon or {}).get(portfolio_id, [])
+    by_ref = {(r.kind, r.key): r for r in mine}
+    exclusions = []
+    for b in exclusion_check(ctx, as_of, pf, cur):
+        r = by_ref.get(("exclusion", breach_key(b)))
+        exclusions.append(ExclusionBreach(**{k: b[k] for k in ("instrument_id", "instrument_name", "held", "via_instrument_id",
+                                                              "via_instrument_name", "value", "weight_pct")},
+                                          key=breach_key(b), status=r.status if r else "no_note", note_ids=r.note_ids if r else []))
+    if recon is None and (row.breach_count or exclusions):
+        gaps.append(gap(f"no mandate reconciliation persisted for {client_id}", client_id))
     bands, limit = [], PositionLimit()
     if data:
         bands = [Band(**{k: b[k] for k in ("asset_class", "weight_pct", "min_pct", "target_pct", "max_pct", "gap_pp", "breach")},
@@ -251,4 +338,4 @@ def get_portfolio(ctx: Ctx, as_of: AsOf, portfolio_id: str) -> PortfolioDetail:
     return PortfolioDetail(
         as_of=as_of, snapshot_date=eff, client_id=client_id, client_name=client["client_name"], portfolio=row,
         benchmark=pf["benchmark"], inception_date=pf["inception_date"], aum_history=history, bands=bands,
-        position_limit=limit, holdings=holdings, sector_exposure=sectors, facilities=facilities_for(ctx, as_of, portfolio_id=portfolio_id), gaps=gaps)
+        position_limit=limit, exclusion_breaches=exclusions, breach_reconciliation=mine, holdings=holdings, sector_exposure=sectors, facilities=facilities_for(ctx, as_of, portfolio_id=portfolio_id), gaps=gaps)

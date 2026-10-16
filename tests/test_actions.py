@@ -153,7 +153,7 @@ def test_contradicted_note_raises_importance_to_medium():
 # ---- 1.2 reconciliation input, 3.3 agent -------------------------------------------------------------
 def test_stub_run_without_reconciliation_has_actions_and_a_gap(reg, source):
     res = derive_actions(reg, "CL-0001", as_of=AS_OF, source=source, model=stub())
-    assert res.actions and res.status == "partial" and any("not reconciled" in g.description for g in res.gaps)
+    assert res.actions and res.status == "partial" and any("notes were not reconciled" in g.description for g in res.gaps)
     assert [a.rank for a in res.actions] == list(range(1, len(res.actions) + 1))
     flat = {f.ref: f for f in flatten(source.report(AS_OF, "CL-0001"))}
     evidence = source.evidence(AS_OF, "CL-0001")
@@ -165,7 +165,7 @@ def test_stub_run_without_reconciliation_has_actions_and_a_gap(reg, source):
 def test_present_reconciliation_is_used_and_contradiction_becomes_an_action(reg, source):
     write_reconciliation(source, "CL-0001", [note("N-001", "contradicted", evidence=())])
     res = derive_actions(reg, "CL-0001", as_of=AS_OF, source=source, model=stub())
-    assert not any("not reconciled" in g.description for g in res.gaps)
+    assert not any("notes were not reconciled" in g.description for g in res.gaps)
     contact = [a for a in res.actions if any(s.kind == "note" for s in a.sources)]
     assert contact and contact[0].category == "client_contact" and contact[0].importance == "medium"
     assert contact[0].importance_raised_from == "low" and res.not_actioned == []

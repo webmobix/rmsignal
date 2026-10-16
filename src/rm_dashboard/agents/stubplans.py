@@ -56,6 +56,8 @@ def _f(claim: str, ids: list[str], confidence: str = "high") -> dict:
 def plan_for(role: str, mode: str, messages: list[BaseMessage]) -> AIMessage:
     if role == "note_reconciler":
         return _note_reconciler(mode, human_text(messages))
+    if role == "mandate_reconciler":
+        return _mandate_reconciler(mode, human_text(messages))
     if role == "rm_overview_summary":
         return _overview_summary(mode, human_text(messages))
     if role == "client_actions":
@@ -108,7 +110,8 @@ def _portfolio(sid, step, by, results, messages, mode):
         return _calls(messages, [
             ("portfolios.get", {"portfolio_id": sid}), ("positions.list", {"portfolio_id": sid}),
             ("analytics.weights", {"portfolio_id": sid}), ("analytics.exposure", {"portfolio_id": sid, "dimension": "asset_class"}),
-            ("analytics.mandate_drift", {"portfolio_id": sid}), ("analytics.pnl", {"portfolio_id": sid})])
+            ("analytics.mandate_drift", {"portfolio_id": sid}), ("analytics.exclusion_breaches", {"portfolio_id": sid}),
+            ("analytics.pnl", {"portfolio_id": sid})])
     w = _first(by, "analytics.weights")
     if step == 1 and w and w["data"]:
         top = sorted(w["data"]["weights"], key=lambda r: (-r["weight_pct"], r["instrument_id"]))[:2]
@@ -129,6 +132,12 @@ def _portfolio(sid, step, by, results, messages, mode):
                                    f"(gap {abs(b['gap_pp']):.2f} percentage points).", [m["evidence_id"]]))
         else:
             findings.append(_f("All asset-class weights are within the mandate bands.", [m["evidence_id"]]))
+    x = _first(by, "analytics.exclusion_breaches")
+    if x and x["status"] == "ok" and (x["data"] or {}).get("breaches"):
+        for b in x["data"]["breaches"]:
+            how = f"through {b['via_instrument_name']}" if b["held"] == "look_through" else "directly"
+            findings.append(_f(f"Excluded holding {b['instrument_name']} ({b['instrument_id']}) is {b['weight_pct']:.2f}% of the portfolio, "
+                               f"held {how}, against the mandate's binding exclusions.", [x["evidence_id"]]))
     if w and w["data"]:
         t = max(w["data"]["weights"], key=lambda r: (r["weight_pct"], r["instrument_id"]))
         findings.append(_f(f"The largest position, {t['instrument_id']}, is {t['weight_pct']:.2f}% of the portfolio.", [w["evidence_id"]]))
@@ -262,6 +271,43 @@ def _note_reconciler(mode: str, humans: list[str]) -> AIMessage:
     return AIMessage(content=json.dumps({"results": results}))
 
 
+# ---- mandate reconciliation ------------------------------------------------------------------
+_MANDATE_CUES = (  # (status, cues in the note); first status with a cue wins, in order of precedence
+    ("contradicted", ("fully aligned", "within the limits", "within limits")),
+    ("client_directed", ("waiver", "instructed", "unwilling", "will not", "not sell")),
+    ("acknowledged", ("acknowledged", "aware of", "knows")),
+)
+
+
+def _mandate_reconciler(mode: str, humans: list[str]) -> AIMessage:
+    """Reads a note as bearing on a breach when it mentions one of the breach's names, then classifies it by cue words."""
+    if mode == "unparsable":
+        return AIMessage(content="I could not produce a structured answer.")
+    text = humans[-1] if humans else ""
+    payload = json.loads(text[text.index(INPUT_MARKER) + len(INPUT_MARKER):])
+    results = []
+    for b in payload["breaches"]:
+        best, cited = "no_note", []
+        for n in payload["notes"]:
+            low = n["quote"].lower()
+            if not any(t in low for t in b["names"]):
+                continue
+            for status, cues in _MANDATE_CUES:
+                if any(c in low for c in cues):
+                    cited.append(n["note_id"])
+                    if _PRECEDENCE.index(status) < _PRECEDENCE.index(best):
+                        best = status
+                    break
+        if best != "no_note":
+            results.append({"portfolio_id": b["portfolio_id"], "kind": b["kind"], "key": b["key"], "evidence_id": b["evidence_id"],
+                            "status": best, "note_ids": cited,
+                            "rationale": f"The cited note bears on this breach ({best.replace('_', ' ')})."})
+    return AIMessage(content=json.dumps({"results": results, "ambiguous_notes": []}))
+
+
+_PRECEDENCE = ("contradicted", "client_directed", "acknowledged", "no_note")
+
+
 # ---- client actions --------------------------------------------------------------------------
 _ACTION_RULES = (  # (claim pattern, category, importance, title, what, why)
     (r"KYC review is (due|overdue)", "compliance_kyc", "medium", "Prepare the KYC review",
@@ -271,11 +317,21 @@ _ACTION_RULES = (  # (claim pattern, category, importance, title, what, why)
      "The report shows a concentrated single-name exposure."),
     (r"(above|below) (a|its) (maximum|minimum|trigger)|weight is .* against a", "mandate_drift", "high", "Address the mandate breach",
      "Bring the portfolio back within its mandate bands.", "The report shows a mandate band breach."),
+    (r"Excluded holding .* binding exclusions", "mandate_drift", "high", "Resolve the excluded holding",
+     "Review the excluded holding with the client and bring the portfolio back within its binding exclusions.",
+     "The report shows a holding the mandate excludes."),
     (r"LTV is", "credit_collateral", "medium", "Review the credit facility",
      "Review the Lombard facility headroom with the client.", "The report shows the facility LTV against its trigger."),
     (r"(fall|falls) short", "liquidity_cash_needs", "high", "Plan the liquidity shortfall",
      "Arrange funding for the planned cash needs.", "The report shows daily-liquid assets short of planned needs."),
 )
+
+
+_MANDATE_WORDING = {  # status -> (title, what, proposed importance)
+    "acknowledged": ("Follow up the plan for the acknowledged breach", "Follow up the plan agreed with the client for the breach.", "low"),
+    "client_directed": ("Review the client's instruction on the breach", "Review the client's instruction that sits outside the mandate.", "low"),
+    "contradicted": ("Correct the record with the client", "Correct the record with the client: the notes and the computed breach disagree.", "low"),
+}
 
 
 def _client_actions(mode: str, humans: list[str]) -> AIMessage:
@@ -285,10 +341,19 @@ def _client_actions(mode: str, humans: list[str]) -> AIMessage:
     text = humans[-1] if humans else ""
     payload = json.loads(text[text.index(INPUT_MARKER) + len(INPUT_MARKER):])
     actions = []
+    mandate = [m for m in payload.get("mandate", [])]
+    covered = {m["breach"] for m in mandate if m["status"] != "no_note"}
     for pattern, cat, imp, title, what, why in _ACTION_RULES:
-        hit = next((f for f in payload["findings"] if re.search(pattern, f["claim"])), None)
+        hit = next((f for f in payload["findings"] if re.search(pattern, f["claim"]) and f["claim"] not in covered), None)
         if hit:
             actions.append({"category": cat, "importance": imp, "title": title, "what": what, "why": why, "refs": [hit["ref"]]})
+    for m in mandate:
+        if m["status"] != "no_note":
+            title, what, imp = _MANDATE_WORDING[m["status"]]
+            if m["status"] == "client_directed" and m["waiver_claimed"]:
+                what += " Verify that the claimed waiver is on file."
+            actions.append({"category": "mandate_drift", "importance": imp, "title": title, "what": what,
+                            "why": f"The mandate reconciliation shows this breach as {m['status'].replace('_', ' ')}.", "refs": [m["ref"]]})
     for n in payload["notes"]:
         if n["verdict"] == "contradicted":
             actions.append({"category": "client_contact", "importance": "low", "title": f"Follow up on note {n['note_id']}",

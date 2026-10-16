@@ -45,7 +45,7 @@ Code: `rm_dashboard.agents` (`analyst.py` builds, runs and assembles; `stubplans
 The outlook stage runs first; the client analysts only read its files:
 
 ```
-rm-dashboard-outlook -> rm-dashboard-analyse -> rm-dashboard-reconcile -> rm-dashboard-actions -> rm-dashboard-overview
+rm-dashboard-outlook -> rm-dashboard-analyse -> rm-dashboard-reconcile -> rm-dashboard-mandate-reconcile -> rm-dashboard-actions -> rm-dashboard-overview
 ```
 
 - **Tools.** `outlook.market` (Relationship and Portfolio Analyst) and `outlook.instrument` (Portfolio Analyst) are
@@ -87,8 +87,8 @@ A second stage, run after the batch, checks what the RM's notes say about a clie
 shows. It is not an analyst: it has no analytics tools and does not change the batch reports.
 
 - **Scope is RM notes only.** Every result has `kind: "rm_note"`. Mandate, limit and policy compliance are not
-  assessed here; they are a different source of truth and will be reconciled by separate capabilities later,
-  writing their own files (`kind` is a closed set so those can be added without changing this output).
+  assessed here; the mandate reconciliation stage below owns that, writing its own file (`kind` is a closed set
+  so other sources can be added without changing this output).
 - **Input:** the client's persisted `reports/<as_of>/<client>.json` flattened to findings with stable refs
   (`CL-0001#f7`, `CL-0001/PF-0001#f3`), its `evidence/<client>.json`, and the notes dated on or before `as_of`
   read through the `notes.list` tool (point-in-time, policy and audit apply). One model call per client; names are
@@ -111,15 +111,48 @@ uv run rm-dashboard-analyse --as-of 2026-08-26 --db rm.db --out reports
 uv run rm-dashboard-reconcile --as-of 2026-08-26 --db rm.db --reports-dir reports
 ```
 
+## Mandate reconciliation
+
+A stage between note reconciliation and actions (`rm-dashboard-mandate-reconcile`) tells the RM and the actions stage
+what the RM's own notes say about each breach the system computed.
+
+- **Subject:** only breaches present in the client's persisted evidence for the date: asset-class band and
+  single-position breaches (`analytics.mandate_drift`) and sustainability-exclusion breaches
+  (`analytics.exclusion_breaches`). A note never creates a breach. Custody portfolios are not reconciled; a managed
+  portfolio without a persisted check is a gap (re-run `analyse` for dates analysed before the exclusion check existed).
+- **Statuses**, one per breach: `no_note` (nothing bears on it; neutral, not a gap), `acknowledged` (RM and client know of
+  it), `client_directed` (the client asked for something outside the mandate, declines to act, or a waiver is claimed)
+  and `contradicted` (a note says the book is aligned and the evidence disagrees). Precedence: `contradicted`,
+  `client_directed`, `acknowledged`, `no_note`.
+- **Notes are claims.** A waiver is quoted as the RM's statement and marked `waiver_claimed`; it is never verified and
+  never changes a breach.
+- **Input and model:** the breaches, and the notes dated on or before `as_of` read through `notes.list`; one model call
+  per client, none when there is no breach or no note. Names are pseudonymised and restored in the output.
+- **Code decides** (`mandate_reconciliation/guard.py`): results for uncomputed breaches are dropped; a status other than
+  `no_note` needs the breach's own evidence id, a cited note dated on or before `as_of` and rationale figures present in
+  the evidence or note, otherwise the breach is reset to `no_note` with a `guard_removed` gap; for a client with several
+  managed portfolios a note is applied only where it names the asset class, instrument or portfolio, otherwise it is
+  listed under `ambiguous_notes`.
+- **Output:** `reports/<as_of>/mandate-reconciliation/<client>.json`, `summary.json` and `audit.jsonl`. Model failure
+  gives every breach `no_note` and status `partial`; a missing report gives `insufficient_data`. Policy checkpoints and
+  audit are those of the other stages (see [policy-checkpoints.md](policy-checkpoints.md)); no new checkpoint.
+
+```sh
+uv run rm-dashboard-mandate-reconcile --as-of 2026-08-26 --db rm.db --reports-dir reports [--clients CL-0005,CL-0007]
+```
+
 ## Client actions
 
-A third stage turns one client's report (and, when present, its note reconciliation) into the concrete next steps for
+A third stage turns one client's report (and, when present, its note reconciliation and mandate reconciliation) into the concrete next steps for
 the RM. It has no tools, sees only that client's content, and runs per client in parallel like the batch.
 
 - **Output:** `reports/<as_of>/actions/<client>.json`: actions with `title`, `what`, `why`, `category`, `importance`,
-  `horizon`, `due_date` and `sources` (finding refs such as `CL-0001#f7` and note ids such as `N-001`, each with the
-  evidence ids copied from that source), plus `not_actioned` and `gaps`; `summary.json` and `audit.jsonl` beside them.
-  Without a reconciliation file, actions come from the report alone and a gap says notes were not reconciled.
+  `horizon`, `due_date` and `sources` (finding refs such as `CL-0001#f7`, note ids such as `N-001` and mandate results such
+  as `PF-0009/band/Commodities`, each with the evidence ids copied from that source; a mandate source also carries the
+  status, the breach kind and the notes it cites), plus `not_actioned` (contradicted notes and contradicted mandate
+  results without an action) and `gaps`; `summary.json` and `audit.jsonl` beside them. Without a reconciliation file,
+  actions come from the report alone and a gap says notes were not reconciled; without a mandate reconciliation file a
+  gap says mandate breaches were not reconciled with notes and every mandate action is treated as `no_note`.
 - **Categories:** `compliance_kyc`, `concentration_risk`, `mandate_drift`, `liquidity_cash_needs`, `credit_collateral`,
   `client_contact`, `data_quality`.
 - **The model proposes, code decides.** Actions are removed (a `guard_removed` gap, status `partial`) when the category
@@ -135,9 +168,20 @@ the RM. It has no tools, sees only that client's content, and runs per client in
   | KYC review due within 30 days / 90 days | `compliance_kyc` | high / medium |
   | Lombard LTV above its trigger / within 5 points | `credit_collateral` | critical / high |
   | Daily-liquid assets short of needs in the horizon | `liquidity_cash_needs` | high |
-  | Mandate band or single-position limit breached | `mandate_drift` | high |
+  | Mandate band, single-position limit or binding exclusion breached, no mandate result linked | `mandate_drift` | high |
   | A single name is at least 25% of the client's assets | `concentration_risk` | high |
   | Any action resting on a contradicted note | any | medium |
+
+For `mandate_drift`, an action that links a mandate-reconciliation result takes its floor from the status of the breach
+(an action that links none keeps the flat `high` above). The wording follows the status: `no_note` raise and resolve the
+breach, `acknowledged` follow up the plan, `client_directed` review the instruction and verify that any claimed waiver
+is on file, `contradicted` correct the record with the client. This table is also rendered in the prompt
+(`RUBRIC_TEXT`):
+
+| Breach | `no_note` | `acknowledged` | `client_directed` | `contradicted` |
+|---|---|---|---|---|
+| band or position | high | medium | high | critical |
+| exclusion | high | high | high | critical |
 
 - **Horizon** (`actions/horizon.py`) comes from dates in the linked evidence (KYC review date, cash-need start) and, as
   a fallback, future ISO dates written in linked findings; past dates in prose are history and ignored. An overdue
@@ -161,6 +205,7 @@ linked. It is mostly code; the only model call is an optional short briefing.
 uv run rm-dashboard-outlook   --as-of 2026-08-26 --db rm.db --reports-dir reports   # outlook/market.json, outlook/instruments/
 uv run rm-dashboard-analyse   --as-of 2026-08-26 --db rm.db --out reports      # <client>.json, evidence/ (reads the outlooks)
 uv run rm-dashboard-reconcile --as-of 2026-08-26 --db rm.db                     # reconciliation/<client>.json
+uv run rm-dashboard-mandate-reconcile --as-of 2026-08-26 --db rm.db            # mandate-reconciliation/<client>.json
 uv run rm-dashboard-actions   --as-of 2026-08-26 --db rm.db                     # actions/<client>.json
 uv run rm-dashboard-overview  --as-of 2026-08-26 --db rm.db                     # overview/<rm_id>.json
 ```

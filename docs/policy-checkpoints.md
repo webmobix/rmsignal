@@ -15,6 +15,9 @@ replaces it without touching agents or tools.
 | `suitability_mandate`, `evidence_provenance`, `compliance_content` | report assembly | `RunContext.assemble` |
 | `human_approval` | approval gate, before client-facing or action-proposing output | `RunContext.assemble` |
 
+The note reconciliation and the mandate reconciliation stages request `pii_minimisation` before their model call and
+`evidence_provenance` and `compliance_content` when assembling the result; the mandate reconciliation adds no checkpoint.
+
 ## Effect of a decision
 
 - `deny` blocks the guarded step only. A denied tool is not executed (`PolicyDenied`, a

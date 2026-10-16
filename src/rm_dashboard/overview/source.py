@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Protocol
 
 from rm_dashboard.actions.contracts import ClientActions
+from rm_dashboard.mandate_reconciliation import MandateReconciliation
 from rm_dashboard.reconciliation import Reconciliation
 from rm_dashboard.reportsource import FlatFinding, FolderReportSource, flatten
 
@@ -32,6 +33,7 @@ class OverviewSource(Protocol):
     def client_actions(self, as_of: date, client_id: str) -> ClientActions | None: ...
     def findings(self, as_of: date, client_id: str) -> dict[str, FlatFinding] | None: ...
     def reconciliation(self, as_of: date, client_id: str) -> Reconciliation | None: ...
+    def mandate_reconciliation(self, as_of: date, client_id: str) -> MandateReconciliation | None: ...
 
 
 class FolderOverviewSource:
@@ -57,6 +59,10 @@ class FolderOverviewSource:
     def reconciliation(self, as_of: date, client_id: str) -> Reconciliation | None:
         p = self.reports.run_dir(as_of) / "reconciliation" / f"{client_id}.json"
         return Reconciliation.model_validate_json(p.read_text()) if p.is_file() else None
+
+    def mandate_reconciliation(self, as_of: date, client_id: str) -> MandateReconciliation | None:
+        p = self.reports.run_dir(as_of) / "mandate-reconciliation" / f"{client_id}.json"
+        return MandateReconciliation.model_validate_json(p.read_text()) if p.is_file() else None
 
 
 def rms_at(repo, as_of: date) -> dict[str, RmInfo]:

@@ -20,6 +20,7 @@ Not every "agent" is the same kind of thing. Four setups exist, and the section 
 | Portfolio Analyst | Deep Agents graph with tool loop | yes | the Relationship Analyst (delegation), sessions, A2A | a child report inside the client report |
 | Instrument Analyst | Deep Agents graph with tool loop | yes | sessions and A2A only (no runner) | a report, on request |
 | Note Reconciler | Single model call; notes read through a tool in code | yes | `rm-dashboard-reconcile` | `reconciliation/<client>.json` |
+| Mandate Reconciler | Single model call; breaches computed earlier, status guarded in code | yes | `rm-dashboard-mandate-reconcile` | `mandate-reconciliation/<client>.json` |
 | Client Actions | Single model call; rubric, merge, horizons in code | yes | `rm-dashboard-actions` | `actions/<client>.json` |
 | RM Overview | Deterministic build; one optional summary call | summary only | `rm-dashboard-overview` | `overview/<rm_id>.json` |
 | Market Outlook analyst | Deep Agents graph with tool loop; carry-forward without a call | yes | `rm-dashboard-outlook` | `outlook/market.json` |
@@ -48,6 +49,7 @@ flowchart LR
     OUT["rm-dashboard-outlook"]
     ANA["rm-dashboard-analyse"]
     REC["rm-dashboard-reconcile"]
+    MRE["rm-dashboard-mandate-reconcile"]
     ACT["rm-dashboard-actions"]
     OVW["rm-dashboard-overview"]
   end
@@ -59,6 +61,7 @@ flowchart LR
     POR["Portfolio Analyst<br/>(Deep Agents)"]
     INS["Instrument Analyst<br/>(Deep Agents)"]
     NRC["Note Reconciler<br/>(single call)"]
+    MRC["Mandate Reconciler<br/>(single call)"]
     CAC["Client Actions<br/>(single call)"]
     OVS["RM Overview summary<br/>(single call)"]
   end
@@ -72,6 +75,7 @@ flowchart LR
     FOUT[("outlook/")]
     FREP[("client reports + evidence")]
     FREC[("reconciliation/")]
+    FMREC[("mandate-reconciliation/")]
     FACT[("actions/")]
     FOVW[("overview/")]
   end
@@ -83,6 +87,7 @@ flowchart LR
   OUT --> IOA
   ANA --> REL
   REC --> NRC
+  MRE --> MRC
   ACT --> CAC
   OVW --> OVB
   OVW --> OVS
@@ -103,8 +108,11 @@ flowchart LR
   REL --> FREP
   FREP --> NRC
   NRC --> FREC
+  FREP --> MRC
+  MRC --> FMREC
   FREP --> CAC
   FREC --> CAC
+  FMREC --> CAC
   CAC --> FACT
   FACT --> OVB
   OVB --> OVS
@@ -117,6 +125,7 @@ flowchart LR
   MOA --- TOOLS
   IOA --- TOOLS
   NRC --- TOOLS
+  MRC --- TOOLS
   TOOLS --- POL
 ```
 
@@ -139,13 +148,14 @@ flowchart LR
   S["rm-dashboard-seed<br/>(once)"] --> O["1 rm-dashboard-outlook<br/>market, then instruments"]
   O --> A["2 rm-dashboard-analyse<br/>one report per client"]
   A --> R["3 rm-dashboard-reconcile<br/>notes vs report"]
-  R --> C["4 rm-dashboard-actions<br/>next actions per client"]
-  C --> V["5 rm-dashboard-overview<br/>ranked actions per RM"]
+  R --> M["4 rm-dashboard-mandate-reconcile<br/>breaches vs notes"]
+  M --> C["5 rm-dashboard-actions<br/>next actions per client"]
+  C --> V["6 rm-dashboard-overview<br/>ranked actions per RM"]
   V --> W["rm-dashboard-serve<br/>read-only API and dashboard"]
 ```
 
 `outlook` runs first because the client analysis reads its files. `analyse` writes the report and evidence; `reconcile`
-reads both; `actions` reads the report, the evidence and, when present, the reconciliation; `overview` reads the actions.
+reads both; `mandate-reconcile` reads the evidence's computed mandate, position-limit and exclusion breaches and the notes; `actions` reads the report, the evidence and, when present, the note and mandate reconciliations; `overview` reads the actions.
 Each command takes `--as-of` (required) and writes under `reports/<as-of>/`.
 
 ## 2. Runners
@@ -160,6 +170,7 @@ Runners are the only callers of the batch agents. Each is a console script from 
 | `rm-dashboard-outlook` | `runners.outlook:run_outlook` | `outlook_analyst` (market, then per instrument) | one market outlook, then one per held instrument, thread pool of `max_concurrency` | `rm.db`, earlier outlooks | `outlook/market.json`, `outlook/instruments/<id>.json`, evidence, `summary.json`, `audit.jsonl` (append-only) |
 | `rm-dashboard-analyse` | `runners.batch:run_batch` | `relationship_analyst` (which delegates to `portfolio_analyst`) | one run per client, thread pool | `rm.db`, outlooks | `<client>.json`, `evidence/<client>.json`, `summary.json`, `audit.jsonl` |
 | `rm-dashboard-reconcile` | `runners.reconcile:run_reconcile` | `note_reconciler` | one call per client, thread pool | client report and evidence, notes | `reconciliation/<client>.json`, `summary.json`, `audit.jsonl` |
+| `rm-dashboard-mandate-reconcile` | `runners.mandate_reconcile:run_mandate_reconcile` | `mandate_reconciler` | one call per client with breaches and notes, thread pool | client report and evidence (breaches), notes | `mandate-reconciliation/<client>.json`, `summary.json`, `audit.jsonl` |
 | `rm-dashboard-actions` | `runners.actions:run_actions` | `client_actions` | one call per client, thread pool | client report and evidence, reconciliation | `actions/<client>.json`, `summary.json`, `audit.jsonl` |
 | `rm-dashboard-overview` | `runners.overview:run_overview` | `rm_overview_summary` (after a deterministic build) | one overview per RM, sequential | `actions/` of the RM's clients | `overview/<rm_id>.json`, `summary.json`, `audit.jsonl` |
 
@@ -269,7 +280,7 @@ flowchart TB
   the persisted instrument outlooks.
 - **Subject and trigger:** a portfolio id (`PF-xxxx`) and `as_of`. Called by the Relationship Analyst; also sessions and A2A.
   No runner starts it on its own.
-- **Inputs and tools:** 12 tools, including `analytics.mandate_drift`, `outlook.market` and `outlook.instrument`.
+- **Inputs and tools:** 13 tools, including `analytics.mandate_drift`, `analytics.exclusion_breaches`, `outlook.market` and `outlook.instrument`.
 - **Delegation and callers:** none outward; called by the Relationship Analyst.
 - **Output and file:** a `Report` returned to the parent and stored in its `children`.
 - **Checks after the model:** the same output guard; a missing outlook is a gap, not a failure.
@@ -301,6 +312,17 @@ flowchart TB
 - **Checks after the model:** `reconciliation/guard.py`: references must resolve to this client's findings; evidence ids are
   copied from those findings; a verdict without resolvable evidence becomes `unverifiable`; a figure in the rationale
   must appear in the evidence or the note; a skipped note is added as `unverifiable`. Names are pseudonymised.
+- **Model used:** the configured model or the stub.
+
+### 4.4.1 Mandate Reconciler (`mandate_reconciler`)
+
+- **Purpose:** gives each computed mandate, position-limit and exclusion breach of a client one status from what the RM's notes say about it: `no_note`, `acknowledged`, `client_directed` or `contradicted`.
+- **Setup:** single model call with code around it. The breaches are read from the persisted evidence (`analytics.mandate_drift`, `analytics.exclusion_breaches`), never from the model or a note; code reads the notes through `notes.list`. No model call when the client has no breach or no note up to `as_of`.
+- **Subject and trigger:** a client id and `as_of`. Called by `rm-dashboard-mandate-reconcile`.
+- **Inputs and tools:** the persisted report and evidence of the client; the notes. One tool: `notes.list`.
+- **Delegation and callers:** none.
+- **Output and file:** `mandate-reconciliation/<client>.json`: one result per breach with status, rationale, the quoted notes, the breach's evidence id and whether a waiver is claimed; `ambiguous_notes`; gaps.
+- **Checks after the model:** `mandate_reconciliation/guard.py`: a breach the system did not compute is dropped; a status other than `no_note` needs the breach's own evidence id and a cited note dated on or before `as_of`, and its figures must appear in the evidence or the note, otherwise it is reset to `no_note` with a gap; a client with several managed portfolios has a note applied only where it names the asset class, instrument or portfolio, otherwise it is listed as ambiguous. A waiver is stated as the RM's claim. Names are pseudonymised.
 - **Model used:** the configured model or the stub.
 
 ### 4.5 Client Actions (`client_actions`)
@@ -399,6 +421,7 @@ code, not chosen by the model. A blank row means the tool is registered and on n
 | `analytics.collateral_funding` | analytics | Whether a client's needs can be funded without breaching the facility when collateral is pledged. | x |  |  |  |  |  |
 | `analytics.concentration` | analytics | Client-level concentration across portfolios with look-through, HHI and top-N. | x |  |  |  |  |  |
 | `analytics.credit_ltv` | analytics | Loan-to-value, headroom to trigger and cure amount for a facility. | x |  |  |  |  |  |
+| `analytics.exclusion_breaches` | analytics | Held instruments flagged sustainability_excluded in a mandate with binding exclusions, direct and through structured products; custody portfolios are not applicable. |  | x |  |  |  |  |
 | `analytics.exposure` | analytics | Portfolio exposure by asset_class, currency, sector or region. |  | x |  |  |  |  |
 | `analytics.liquidity` | analytics | Liquid assets against planned needs and uncalled commitments within a horizon. | x |  |  |  |  |  |
 | `analytics.mandate_drift` | analytics | Asset-class weights against mandate bands; custody portfolios are not applicable. |  | x |  |  |  |  |

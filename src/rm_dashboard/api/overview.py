@@ -23,7 +23,7 @@ MEETING_WINDOW_DAYS = 14
 class ResolvedRef(BaseModel):
     """A source reference with the ids needed to link to it, so a UI never parses ``CL-0001/PF-0001#f8``."""
 
-    kind: Literal["finding", "note"]
+    kind: Literal["finding", "note", "mandate"]
     ref: str
     client_id: str
     portfolio_id: str | None = None
@@ -92,7 +92,7 @@ def resolve_refs(ctx: ReadContext, as_of: date, action: OverviewAction) -> list[
         parts = path.split("/")
         out.append(ResolvedRef(
             kind=s.kind, ref=s.ref, client_id=parts[0] if parts[0].startswith("CL-") else action.client_id,
-            portfolio_id=parts[1] if len(parts) > 1 else None,
+            portfolio_id=s.ref.split("/")[0] if s.kind == "mandate" else (parts[1] if len(parts) > 1 else None),
             claim=f.claim if f else None, evidence_ids=list(s.evidence_ids),
         ))
     return out

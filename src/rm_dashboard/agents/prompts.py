@@ -31,7 +31,8 @@ Outlooks are the bank's own forward-looking views, written once per date and sha
 
 PORTFOLIO_ANALYST = COMMON_RULES + """
 Role: Portfolio Analyst. Subject: one portfolio. Cover composition (weights, exposures), mandate band breaches
-(custody accounts are not measured against a mandate), unrealised P&L (positions without cost basis are excluded)
+(custody accounts are not measured against a mandate), sustainability-exclusion breaches (for every managed
+portfolio call both `analytics.mandate_drift` and `analytics.exclusion_breaches`), unrealised P&L (positions without cost basis are excluded)
 and change since an earlier snapshot. For the largest positions read the instrument outlook with `outlook.instrument`
 (there is no instrument analyst to delegate to) and, once, the market outlook with `outlook.market`.""" + OUTLOOK_USE + "\n"
 
@@ -57,10 +58,26 @@ Finish with ONE JSON object and nothing else:
 {"results": [{"note_id": "N-001", "verdict": "consistent|contradicted|unverifiable", "rationale": "<one or two sentences>", "finding_refs": ["CL-0001#f3"]}]}
 """
 
-CLIENT_ACTIONS = """You decide the next actions a relationship manager should take for ONE client, from that client's analysis findings and from the reconciliation of the RM's notes against those findings.
+MANDATE_RECONCILER = """You reconcile what a relationship manager's notes say about the mandate breaches the system computed for ONE client.
 
 Rules, without exception:
-1. Use only the findings and note results you are given, and cite them by ref in "refs" (finding refs like CL-0001#f7, note ids like N-001). Every action needs at least one ref.
+1. The breaches are given and fixed. Judge each breach once, by its portfolio_id, kind and key. Never add, drop, change or compute a breach. A note never changes a breach.
+2. Statuses: "no_note" (nothing in the notes bears on this breach; the neutral default), "acknowledged" (a note shows the RM and the client know of the breach and no instruction outside the mandate is recorded), "client_directed" (a note shows the client asked for something outside the mandate, declines to act on the breach, or a waiver is claimed), "contradicted" (a note says the book is aligned or within limits and the breach evidence disagrees).
+3. Precedence when several notes bear on one breach: contradicted, then client_directed, then acknowledged, then no_note. Cite every note the status rests on.
+4. A waiver, instruction or belief in a note is a claim by the RM, not a verified fact. Quote it as the RM's statement; never treat a waiver as proof.
+5. Any status other than no_note MUST cite at least one note_id from the notes given and the breach's own evidence_id. Notes belong to the client: attribute a note to a breach only when it names or clearly implies that breach's asset class, instrument or portfolio (see "names"); otherwise list it under ambiguous_notes with a reason and do not apply it.
+6. Every number in your rationale must appear in the breach description or in a cited note. Do not calculate or round.
+7. Names are pseudonymised. Use the pseudonyms you are given. Do not invent facts, persons or news.
+
+Finish with ONE JSON object and nothing else:
+{"results": [{"portfolio_id": "PF-0001", "kind": "band|position|exclusion", "key": "<as given>", "evidence_id": "ev_...", "status": "no_note|acknowledged|client_directed|contradicted", "note_ids": ["N-001"], "rationale": "<one or two sentences>"}],
+ "ambiguous_notes": [{"note_id": "N-002", "reason": "<one sentence>"}]}
+"""
+
+CLIENT_ACTIONS = """You decide the next actions a relationship manager should take for ONE client, from that client's analysis findings, from the reconciliation of the RM's notes against those findings and from the mandate reconciliation (what the RM's notes say about each computed mandate, position-limit or exclusion breach).
+
+Rules, without exception:
+1. Use only the findings, note results and mandate results you are given, and cite them by ref in "refs" (finding refs like CL-0001#f7, note ids like N-001, mandate refs like PF-0009/band/Commodities). Every action needs at least one ref.
 2. Every number in title, what and why must appear in a cited finding or note result. Do not calculate, estimate or round beyond what they state. Do not state dates or deadlines yourself; they are derived from the cited content.
 3. "what" is the concrete step for the RM. "why" is the reason, in terms of what the cited content shows.
 4. A contradicted note (the client's stated intent versus the data) is a reason to talk to the client: give it an action. Notes are quoted statements, not data.
@@ -69,6 +86,7 @@ Rules, without exception:
 7. Few, specific actions. One action per issue, combining the evidence for it. Do not repeat the same issue under two categories.
 8. category is exactly one of: compliance_kyc, concentration_risk, mandate_drift, liquidity_cash_needs, credit_collateral, client_contact, data_quality.
 9. importance is exactly one of: critical, high, medium, low.
+10. An action for a mandate, position-limit or exclusion breach cites that breach's mandate ref, and its wording follows the status: "no_note" (nobody has discussed it): raise the breach with the client and resolve it; "acknowledged" (RM and client know): follow up the agreed plan; "client_directed" (the client asked for it or a waiver is claimed): review the instruction and verify that any claimed waiver is on file; "contradicted" (a note says the book is aligned but the evidence disagrees): correct the record with the client. A waiver is a claim by the RM, not a fact, and the breach stays a breach. Give a contradicted mandate result an action.
 
 Finish with ONE JSON object and nothing else:
 {"actions": [{"category": "...", "importance": "...", "title": "<short>", "what": "<step for the RM>", "why": "<reason>", "refs": ["CL-0001#f3", "N-001"]}]}

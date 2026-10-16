@@ -101,6 +101,21 @@ def mandate_tool(ctx: ToolContext, p: PortfolioParams):
     return _wrap("analytics.mandate_drift", p, calc, [pf, h, bands], data)
 
 
+def exclusion_tool(ctx: ToolContext, p: PortfolioParams):
+    pf = ctx.repo.portfolios(as_of=p.as_of, portfolio_id=p.portfolio_id)
+    h = ctx.repo.holdings(as_of=p.as_of, portfolio_id=p.portfolio_id)
+    if not pf.frame.height:
+        return build_result(tool="analytics.exclusion_breaches", version="1", params=p, as_of=p.as_of, pits=[pf], data=None,
+                            status="no_data", reason=f"portfolio {p.portfolio_id} not found at {p.as_of}")
+    row = pf.frame.row(0, named=True)
+    bands = ctx.repo.mandates(as_of=p.as_of, mandate_code=row["mandate_code"])
+    notes = bands.frame["mandate_notes"][0] if bands.frame.height else None
+    inst = ctx.repo.instruments(as_of=p.as_of)
+    calc = mandate.exclusion_breaches(h.frame, inst.frame, service_model=row["service_model"], mandate_notes=notes)
+    data = {**calc.data, "portfolio_id": p.portfolio_id, "mandate_code": row["mandate_code"], "service_model": row["service_model"]}
+    return _wrap("analytics.exclusion_breaches", p, calc, [pf, h, bands, inst], data)
+
+
 def liquidity_tool(ctx: ToolContext, p: LiquidityParams):
     h, _ = _client_positions(ctx, p.as_of, p.client_id)
     needs = ctx.repo.cash_needs(as_of=p.as_of, client_id=p.client_id)
@@ -222,6 +237,7 @@ ANALYTICS_TOOLS = [
     _a("analytics.exposure", "Portfolio exposure by asset_class, currency, sector or region.", ExposureParams, exposure_tool),
     _a("analytics.concentration", "Client-level concentration across portfolios with look-through, HHI and top-N.", ConcentrationParams, concentration_tool),
     _a("analytics.mandate_drift", "Asset-class weights against mandate bands; custody portfolios are not applicable.", PortfolioParams, mandate_tool),
+    _a("analytics.exclusion_breaches", "Held instruments flagged sustainability_excluded in a mandate with binding exclusions, direct and through structured products; custody portfolios are not applicable.", PortfolioParams, exclusion_tool),
     _a("analytics.liquidity", "Liquid assets against planned needs and uncalled commitments within a horizon.", LiquidityParams, liquidity_tool),
     _a("analytics.credit_ltv", "Loan-to-value, headroom to trigger and cure amount for a facility.", FacilityParams, credit_ltv_tool),
     _a("analytics.collateral_funding", "Whether a client's needs can be funded without breaching the facility when collateral is pledged.", FacilityParams, collateral_funding_tool),

@@ -108,3 +108,11 @@ def test_contradicted_note_floor_is_medium_and_floor_only_raises():
     assert apply_floor("low", "high") == "high"
     assert apply_floor("critical", "high") == "critical"
     assert apply_floor("low", None) == "low"
+
+
+def test_exclusion_breach_floor_is_high_and_documented():
+    from rm_dashboard.actions.rubric import RUBRIC_TEXT
+    assert floor_for("mandate_drift", [ev("analytics.exclusion_breaches", {"breaches": [{"instrument_id": "X"}]})]) == "high"
+    assert floor_for("mandate_drift", [ev("analytics.exclusion_breaches", {"breaches": []})]) is None
+    assert floor_for("compliance_kyc", [ev("analytics.exclusion_breaches", {"breaches": [{"x": 1}]})]) is None
+    assert "binding exclusions" in RUBRIC_TEXT

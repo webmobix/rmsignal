@@ -20,14 +20,18 @@ HORIZON_ORDER = ("immediate", "within_30_days", "within_90_days", "later", "none
 
 
 class SourceRef(BaseModel):
-    """What an action rests on: a report finding (``CL-0001#f7``) or a reconciled note (``N-001``)."""
+    """What an action rests on: a report finding (``CL-0001#f7``), a reconciled note (``N-001``) or a mandate
+    reconciliation result (``PF-0009/band/Commodities``, with its status, breach kind and the notes it cites)."""
 
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["finding", "note"]
+    kind: Literal["finding", "note", "mandate"]
     ref: str
     report_path: str | None = None
     evidence_ids: list[str] = Field(default_factory=list)
+    mandate_status: Literal["no_note", "acknowledged", "client_directed", "contradicted"] | None = None
+    breach_kind: Literal["band", "position", "exclusion"] | None = None
+    note_ids: list[str] = Field(default_factory=list)
 
 
 class Action(BaseModel):
@@ -44,10 +48,13 @@ class Action(BaseModel):
 
 
 class NotActioned(BaseModel):
+    """A contradicted note or mandate result that no action covers; ``note_id`` is the mandate result's ref when ``kind`` is ``mandate``."""
+
     model_config = ConfigDict(frozen=True)
 
     note_id: str
     rationale: str
+    kind: Literal["note", "mandate"] = "note"
 
 
 class ClientActions(BaseModel):

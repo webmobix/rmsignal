@@ -515,6 +515,51 @@ export interface components {
              */
             crosses: "out" | "in";
         };
+        /**
+         * BreachReconciliation
+         * @description What the RM's notes say about one computed breach. The portfolio list carries ids only; the detail adds the quotes.
+         */
+        BreachReconciliation: {
+            /** Portfolio Id */
+            portfolio_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "band" | "position" | "exclusion";
+            /** Key */
+            key: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "no_note" | "acknowledged" | "client_directed" | "contradicted";
+            /**
+             * Note Ids
+             * @default []
+             */
+            note_ids: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Rationale
+             * @default
+             */
+            rationale: string;
+            /**
+             * Waiver Claimed
+             * @default false
+             */
+            waiver_claimed: boolean;
+            /**
+             * Notes
+             * @default []
+             */
+            notes: components["schemas"]["NoteQuote"][];
+        };
         /** CategoryGroup */
         CategoryGroup: {
             /**
@@ -876,6 +921,39 @@ export interface components {
             result: components["schemas"]["ToolResult"];
             /** Cited By */
             cited_by: components["schemas"]["Citation"][];
+        };
+        /** ExclusionBreach */
+        ExclusionBreach: {
+            /** Instrument Id */
+            instrument_id: string;
+            /** Instrument Name */
+            instrument_name: string;
+            /**
+             * Held
+             * @enum {string}
+             */
+            held: "direct" | "look_through";
+            /** Via Instrument Id */
+            via_instrument_id?: string | null;
+            /** Via Instrument Name */
+            via_instrument_name?: string | null;
+            /** Value */
+            value: number;
+            /** Weight Pct */
+            weight_pct: number;
+            /** Key */
+            key: string;
+            /**
+             * Status
+             * @default no_note
+             * @enum {string}
+             */
+            status: "no_note" | "acknowledged" | "client_directed" | "contradicted";
+            /**
+             * Note Ids
+             * @default []
+             */
+            note_ids: string[];
         };
         /** Exposure */
         Exposure: {
@@ -1487,6 +1565,18 @@ export interface components {
              */
             evidence_ids: string[];
         };
+        /** NoteQuote */
+        NoteQuote: {
+            /** Note Id */
+            note_id: string;
+            /**
+             * Note Date
+             * Format: date
+             */
+            note_date: string;
+            /** Quote */
+            quote: string;
+        };
         /**
          * OutlookInputs
          * @description The data an outlook rests on; equal inputs mean nothing new has arrived.
@@ -1599,6 +1689,16 @@ export interface components {
             /** Bands */
             bands: components["schemas"]["Band"][];
             position_limit: components["schemas"]["PositionLimit"];
+            /**
+             * Exclusion Breaches
+             * @default []
+             */
+            exclusion_breaches: components["schemas"]["ExclusionBreach"][];
+            /**
+             * Breach Reconciliation
+             * @default []
+             */
+            breach_reconciliation: components["schemas"]["BreachReconciliation"][];
             /** Holdings */
             holdings: components["schemas"]["HoldingRow"][];
             sector_exposure: components["schemas"]["SectorExposure"];
@@ -1639,6 +1739,11 @@ export interface components {
              * @default 0
              */
             breach_count: number;
+            /**
+             * Breach Reconciliation
+             * @default []
+             */
+            breach_reconciliation: components["schemas"]["BreachReconciliation"][];
         };
         /** PortfolioSeries */
         PortfolioSeries: {
@@ -1787,7 +1892,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "finding" | "note";
+            kind: "finding" | "note" | "mandate";
             /** Ref */
             ref: string;
             /** Client Id */
@@ -2007,20 +2112,27 @@ export interface components {
         };
         /**
          * SourceRef
-         * @description What an action rests on: a report finding (``CL-0001#f7``) or a reconciled note (``N-001``).
+         * @description What an action rests on: a report finding (``CL-0001#f7``), a reconciled note (``N-001``) or a mandate
+         *     reconciliation result (``PF-0009/band/Commodities``, with its status, breach kind and the notes it cites).
          */
         SourceRef: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "finding" | "note";
+            kind: "finding" | "note" | "mandate";
             /** Ref */
             ref: string;
             /** Report Path */
             report_path?: string | null;
             /** Evidence Ids */
             evidence_ids?: string[];
+            /** Mandate Status */
+            mandate_status?: ("no_note" | "acknowledged" | "client_directed" | "contradicted") | null;
+            /** Breach Kind */
+            breach_kind?: ("band" | "position" | "exclusion") | null;
+            /** Note Ids */
+            note_ids?: string[];
         };
         /** Theme */
         Theme: {

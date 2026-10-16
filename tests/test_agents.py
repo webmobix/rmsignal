@@ -405,3 +405,12 @@ def test_finding_citing_event_keeps_figure_from_its_description(make_scope):
     out = guard_output([{"claim": "Brent peaked at approximately USD 114 per barrel in May.", "confidence": "high",
                          "evidence_ids": [news.evidence_id]}], "", scope.store, AS_OF)
     assert len(out.findings) == 1 and not out.gaps
+
+
+def test_portfolio_analyst_calls_exclusion_breaches_for_managed_portfolio(make_scope):
+    r, scope, _ = run_role(make_scope, "portfolio_analyst", "PF-0007")
+    tools = {x.computation.tool for x in scope.store.results.values()}
+    assert {"analytics.mandate_drift", "analytics.exclusion_breaches"} <= tools
+    ex = next(x for x in scope.store.results.values() if x.computation.tool == "analytics.exclusion_breaches")
+    claims = [f for f in r.findings if f.claim.startswith("Excluded holding")]
+    assert len(claims) == 2 and all(ex.evidence_id in f.evidence_ids for f in claims)
