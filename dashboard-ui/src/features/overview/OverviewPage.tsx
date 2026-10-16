@@ -44,6 +44,7 @@ export function OverviewPage() {
 										key: `tier-${tier}`,
 										value: n,
 										label: titleCase(tier),
+										actionsTier: tier,
 									})),
 									{
 										key: "status",

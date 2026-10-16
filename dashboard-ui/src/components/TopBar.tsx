@@ -4,6 +4,7 @@ import { Avatar } from "./Avatar";
 
 const NAV = [
 	{ to: "/", label: "Overview" },
+	{ to: "/actions", label: "Actions" },
 	{ to: "/clients", label: "Clients" },
 	{ to: "/instruments", label: "Instruments" },
 	{ to: "/market", label: "Market" },

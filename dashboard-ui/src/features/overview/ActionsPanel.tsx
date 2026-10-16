@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import type { Overview } from "#/api/queries";
-import { titleCase } from "#/lib/format";
 import { TIER_COLOR, TIER_LABEL, TIERS } from "#/lib/tiers";
 import { ActionTable } from "./ActionList";
-import { DATA_QUALITY, splitActions, tierCounts } from "./actions";
+import { urgentActions } from "./actions";
 
 export function TierFilter({
 	counts,
@@ -46,65 +45,30 @@ export function TierFilter({
 }
 
 export function ActionsPanel({ overview }: { overview: Overview }) {
-	const [tier, setTier] = useState<string | null>(null);
-	const [category, setCategory] = useState<string | null>(null);
-	const { risks, dataQuality } = splitActions(overview.actions, {
-		tier,
-		category,
-	});
-	const categories = overview.by_category.filter(
-		(c) => c.category !== DATA_QUALITY,
-	);
+	const urgent = urgentActions(overview.actions);
+	const more = overview.actions.length - urgent.length;
 	return (
 		<section aria-labelledby="actions-h" className="mt-10">
-			<div className="flex flex-wrap items-end justify-between gap-4">
-				<h2 id="actions-h" className="text-[26px]">
-					Next actions
-				</h2>
-				<TierFilter
-					counts={tierCounts(overview.actions)}
-					value={tier}
-					onChange={setTier}
-				/>
-			</div>
-			<fieldset
-				className="m-0 mt-3 flex min-w-0 flex-wrap gap-2 border-0 p-0"
-				aria-label="Filter by category"
-			>
-				{categories.map((c) => {
-					const on = category === c.category;
-					return (
-						<button
-							key={c.category}
-							type="button"
-							aria-pressed={on}
-							onClick={() => setCategory(on ? null : c.category)}
-							className={`border px-2.5 py-1 text-xs ${on ? "border-navy-950 bg-navy-950 text-canvas" : "border-rule bg-surface text-ink-2 hover:border-slate-blue"}`}
-						>
-							{titleCase(c.category)}{" "}
-							<span className="num opacity-70">{c.count}</span>
-						</button>
-					);
-				})}
-			</fieldset>
+			<h2 id="actions-h" className="text-[26px]">
+				Needs action now
+			</h2>
+			<p className="mt-1 text-xs text-ink-muted">
+				Critical and high importance, immediate horizon.
+			</p>
 			<div className="mt-4" data-testid="risk-actions">
-				<ActionTable actions={risks} />
+				<ActionTable actions={urgent} empty="Nothing needs immediate action." />
 			</div>
-			<details className="mt-8 border-t border-rule pt-4" data-testid="dq-lane">
-				<summary className="cursor-pointer text-[13px] font-semibold text-navy-950">
-					Data quality and coverage{" "}
-					<span className="num font-normal text-ink-muted">
-						({dataQuality.length})
-					</span>
-				</summary>
-				<p className="mt-2 max-w-[760px] text-xs text-ink-muted">
-					Gaps in the analysis, such as clients whose report produced no
-					actions. Kept apart so they do not crowd out client risks.
-				</p>
-				<div className="mt-3">
-					<ActionTable actions={dataQuality} empty="No data-quality items." />
-				</div>
-			</details>
+			<p className="mt-3 text-[13px]">
+				<Link
+					to="/actions"
+					className="font-medium text-navy-950 hover:text-navy-700"
+				>
+					{more} more {more === 1 ? "action" : "actions"}
+				</Link>{" "}
+				<span className="text-ink-muted">
+					including medium and low importance, and data quality
+				</span>
+			</p>
 		</section>
 	);
 }

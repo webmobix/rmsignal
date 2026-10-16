@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 export interface Metric {
@@ -5,6 +6,8 @@ export interface Metric {
 	label: ReactNode;
 	value: ReactNode;
 	hint?: ReactNode;
+	/** Makes the label a link to the Actions page, filtered to a tier. */
+	actionsTier?: string;
 }
 
 export function MetricStrip({
@@ -20,7 +23,17 @@ export function MetricStrip({
 				<div key={m.key} data-testid={`metric-${m.key}`}>
 					<div className="metric-value num">{m.value}</div>
 					<div className="mt-2 whitespace-nowrap text-xs text-ink-2">
-						{m.label}
+						{m.actionsTier ? (
+							<Link
+								to="/actions"
+								search={{ tier: m.actionsTier }}
+								className="text-ink-2 underline decoration-rule underline-offset-2 hover:text-navy-950"
+							>
+								{m.label}
+							</Link>
+						) : (
+							m.label
+						)}
 					</div>
 					{m.hint ? (
 						<div className="text-[11px] text-ink-muted">{m.hint}</div>
