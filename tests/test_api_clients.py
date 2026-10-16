@@ -163,3 +163,37 @@ def test_snapshot_changes_lists_added_removed_and_resized(api):
                                "from=2026-02-27&to=2026-04-01", "from=2026-03-31&to=2026-03-31"])
 def test_snapshot_changes_invalid_snapshots_are_422(api, q):
     assert api.get(f"/api/clients/CL-0001/snapshot-changes?{q}").status_code == 422
+
+
+def _sums(se):
+    return sum(g["exposure_pct"] for g in se["direct"]), sum(g["exposure_pct"] for g in se["look_through"])
+
+
+def test_portfolio_sector_exposure(api):
+    j = api.get("/api/portfolios/PF-0003").json()
+    se = j["sector_exposure"]
+    assert se["denominator"] == pytest.approx(sum(h["market_value_base"] for h in j["holdings"]))
+    assert se["denominator_label"]
+    direct, look = _sums(se)
+    assert direct == pytest.approx(100, abs=0.01) and look == pytest.approx(100, abs=0.01)
+
+
+def test_sector_exposure_sums_on_every_portfolio_and_flags_structured_products(api):
+    ids = [f"PF-{n:04d}" for n in range(1, 40)]
+    seen = 0
+    for pid in ids:
+        r = api.get(f"/api/portfolios/{pid}")
+        if r.status_code == 404:
+            continue
+        seen += 1
+        j = r.json()
+        if j["holdings"]:
+            d, lt = _sums(j["sector_exposure"])
+            assert d == pytest.approx(100, abs=0.01) and lt == pytest.approx(100, abs=0.01), pid
+        else:
+            assert j["sector_exposure"]["direct"] == [] and any("no positions" in g["description"] for g in j["gaps"])
+    assert seen >= 20
+    for pid in ("PF-0017", "PF-0023"):
+        j = api.get(f"/api/portfolios/{pid}").json()
+        assert "Unclassified (look-through)" in {g["name"] for g in j["sector_exposure"]["look_through"]}, pid
+        assert any("look-through" in g["description"] for g in j["gaps"])

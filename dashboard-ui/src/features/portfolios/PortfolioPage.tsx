@@ -14,6 +14,7 @@ import { PageHeader } from "#/components/PageHeader";
 import { EmptyNotice, StateBoundary } from "#/components/StateBoundary";
 import { fmtDate, fmtPct, fmtUsd } from "#/lib/format";
 import { MandateStatus } from "../clients/PortfolioList";
+import { SectorSection } from "./SectorSection";
 
 type Detail = Schemas["PortfolioDetail"];
 type Holding = Detail["holdings"][number];
@@ -187,6 +188,12 @@ export function PortfolioPage() {
 										.
 									</p>
 								) : null}
+							</section>
+							<section className="mt-10" aria-labelledby="sector-h">
+								<h2 id="sector-h" className="mb-3 text-[22px]">
+									Sector exposure
+								</h2>
+								<SectorSection exposure={p.sector_exposure} />
 							</section>
 							<section className="mt-10" aria-labelledby="hold-h">
 								<h2 id="hold-h" className="mb-3 text-[22px]">

@@ -23,6 +23,10 @@ LTV% = drawn / lending_value x 100 where lending value is market value after adv
 
 Cash need is met first from assets outside the pledged portfolio. Any remainder must be raised by selling collateral, which releases lending value at the average advance rate and forces repayment so LTV stays within the trigger. Required sale x satisfies x >= shortfall and x >= (drawn + shortfall - T x lending_value) / (1 - T x a); repayment = x - shortfall. All values in the facility currency.
 
+## sector_look_through
+
+Direct: positions are grouped by the sector of their instrument, exposure_pct = group value / portfolio value x 100 (portfolio base currency). Look-through: each structured product is replaced by its referenced underlyings, each classified by the sector of the non-structured instrument whose normalised name it matches; a product referencing a basket attributes its value equally to each underlying (an assumption, not a sensitivity). An underlying that matches no instrument or has no sector, and a product whose underlyings cannot be identified, is grouped as 'Unclassified (look-through)'; a position without a sector is 'unclassified'. Sector labels that are asset types (Diversified, Corporate, Sovereign, Cash, Gold, Multi, Macro) are shown as their own groups. No sector data is added. Both views use the same denominator, which is stated.
+
 ## weights
 
 weight_pct = value / sum(value of the positions supplied) x 100; the denominator is the sum over exactly the positions given and is reported with its label.

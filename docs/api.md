@@ -97,7 +97,7 @@ An unknown id answers 404.
 | `GET /api/clients/{client_id}` | profile, `consolidated` block, `portfolios` list, actions, findings, notes |
 | `GET /api/clients/{client_id}/aum-history` | AuM at every snapshot, per portfolio and in total, with the events in range |
 | `GET /api/clients/{client_id}/snapshot-changes` | what changed between two snapshots (`?from=&to=`) |
-| `GET /api/portfolios/{portfolio_id}` | header, AuM history, mandate bands, holdings, position limit, facilities |
+| `GET /api/portfolios/{portfolio_id}` | header, AuM history, mandate bands, holdings, sector exposure, position limit, facilities |
 
 **Currency.** The dataset's `aum_<date>` per portfolio is in the portfolio's base currency, so portfolios of one client cannot be
 added up. Every sum across portfolios in the API is of `market_value_usd` and named `*_usd`; `aum_base` and `base_currency` are
@@ -138,6 +138,16 @@ when the weight is outside them (`breach` says which side). `position_limit` has
 largest position, and the positions over the limit (only instruments flagged `concentration_limit_applies` are compared). A custody
 account has no bands and says why. `holdings` are the positions at the effective snapshot, `facilities` those secured on the
 portfolio, with the LTV history.
+
+`sector_exposure` has `denominator` (the portfolio value in base currency) with its `denominator_label`, and two lists of groups,
+`direct` (each position by its instrument's sector) and `look_through` (structured products replaced by their underlyings, each
+classified by the sector of the instrument it matches by normalised name). A group has `name`, `value`, `exposure_pct`, `positions`
+and, in the look-through view, the `contributors` (structured products) behind it. Both lists sum to 100. Value that cannot be
+classified is `unclassified` (position without a sector) or `Unclassified (look-through)` (underlying matching no instrument, or
+a product whose underlying is not identifiable); a gap names each product and underlying. Sector labels that are asset types
+(`Diversified`, `Corporate`, `Sovereign`, `Cash`, `Gold`, `Multi`, `Macro`) are their own groups. `basket_attribution_assumption`
+is true when a basket product's value was split equally across its underlyings. Informational: no sector limit exists in the
+mandates. A portfolio without positions has empty lists and a gap.
 
 ## Instruments, market outlook, events
 

@@ -402,3 +402,67 @@ def test_docs_list_every_method():
     for name, method in METHODS.items():
         assert f"## {name}\n" in text and method in text, name
         assert len(method) > 40
+
+
+# ---- sector look-through ------------------------------------------------------------
+def _sector_frames(rows, extra_instruments=()):
+    pos = pl.DataFrame(rows, schema={"portfolio_id": pl.String, "instrument_id": pl.String, "instrument_name": pl.String,
+                                     "asset_class": pl.String, "sector": pl.String, "v": pl.Float64}, orient="row")
+    inst = pl.DataFrame(
+        [{"instrument_id": r[1], "instrument_name": r[2], "asset_class": r[3], "sector": r[4], "underlying_reference": None} for r in rows])
+    for iid, ref in extra_instruments:
+        inst = inst.with_columns(pl.when(pl.col("instrument_id") == iid).then(pl.lit(ref)).otherwise(pl.col("underlying_reference")).alias("underlying_reference"))
+    return pos, inst
+
+
+def _sector_calc(rows, refs=()):
+    from rm_dashboard.analytics import sector
+    pos, inst = _sector_frames(rows, refs)
+    return sector.sector_look_through(pos, inst, value_col="v")
+
+
+def _by_name(groups):
+    return {g["name"]: g["exposure_pct"] for g in groups}
+
+
+def test_sector_direct_and_matched_underlying():
+    rows = [("P", "A", "Helios Cloud Systems Inc", "Equity", "Information Technology", 60.0),
+            ("P", "B", "Bank Corp", "Equity", "Financials", 20.0),
+            ("P", "SP", "Note ref. Helios Cloud Systems Inc, 12M", "Structured Products", "Diversified", 20.0)]
+    c = _sector_calc(rows)
+    assert _by_name(c.data["direct"]) == {"Information Technology": 60.0, "Financials": 20.0, "Diversified": 20.0}
+    assert _by_name(c.data["look_through"]) == {"Information Technology": 80.0, "Financials": 20.0}
+    it = next(g for g in c.data["look_through"] if g["name"] == "Information Technology")
+    assert it["contributors"] == ["SP"]
+
+
+def test_sector_unmatched_unresolved_missing_and_asset_type_labels():
+    rows = [("P", "A", "Gov Bond", "Fixed Income", "Sovereign", 40.0),
+            ("P", "B", "Mystery", "Equity", None, 10.0),
+            ("P", "SP1", "Note ref. Nobody Ltd, 12M", "Structured Products", "Diversified", 30.0),
+            ("P", "SP2", "Autocall ref. Asia Banks Basket, 7%", "Structured Products", "Diversified", 20.0)]
+    c = _sector_calc(rows)
+    lt = _by_name(c.data["look_through"])
+    assert lt == {"Sovereign": 40.0, "Unclassified (look-through)": 50.0, "unclassified": 10.0}
+    codes = {f.code for f in c.flags}
+    assert {"unclassified_underlying", "unresolved_underlying"} <= codes
+    assert any("SP1" in (f.subject or "") for f in c.flags if f.code == "unclassified_underlying")
+    assert any("SP2" in (f.subject or "") for f in c.flags if f.code == "unresolved_underlying")
+
+
+def test_sector_basket_equal_split_and_sums():
+    rows = [("P", "A", "Alpha Corp", "Equity", "Energy", 10.0), ("P", "B", "Beta Corp", "Equity", "Financials", 10.0),
+            ("P", "C", "Gamma Corp", "Equity", "Utilities", 10.0),
+            ("P", "SP", "Worst-of", "Structured Products", "Diversified", 30.0)]
+    c = _sector_calc(rows, [("SP", "Worst-of basket: Alpha Corp / Beta Corp / Gamma Corp")])
+    lt = _by_name(c.data["look_through"])
+    assert lt == {k: pytest.approx(100 / 3) for k in ("Energy", "Financials", "Utilities")}
+    assert lt["Energy"] == pytest.approx(lt["Financials"]) == pytest.approx(lt["Utilities"])
+    assert any(f.code == "basket_attribution_assumption" for f in c.flags)
+    for view in ("direct", "look_through"):
+        assert sum(g["exposure_pct"] for g in c.data[view]) == pytest.approx(100, abs=0.01)
+
+
+def test_sector_empty_is_insufficient():
+    from rm_dashboard.analytics import sector
+    assert sector.sector_look_through(pl.DataFrame(), pl.DataFrame()).status == "insufficient_data"

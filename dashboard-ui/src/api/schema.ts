@@ -1601,6 +1601,7 @@ export interface components {
             position_limit: components["schemas"]["PositionLimit"];
             /** Holdings */
             holdings: components["schemas"]["HoldingRow"][];
+            sector_exposure: components["schemas"]["SectorExposure"];
             /** Facilities */
             facilities: components["schemas"]["Facility"][];
         };
@@ -1891,6 +1892,56 @@ export interface components {
             bands: components["schemas"]["BandCrossing"][];
             /** Positions */
             positions: components["schemas"]["PositionMove"][];
+        };
+        /**
+         * SectorExposure
+         * @description Sector exposure of one portfolio. Informational: no sector limits exist in the mandates.
+         */
+        SectorExposure: {
+            /**
+             * Denominator
+             * @default 0
+             */
+            denominator: number;
+            /**
+             * Denominator Label
+             * @default
+             */
+            denominator_label: string;
+            /**
+             * Direct
+             * @default []
+             */
+            direct: components["schemas"]["SectorGroup"][];
+            /**
+             * Look Through
+             * @default []
+             */
+            look_through: components["schemas"]["SectorGroup"][];
+            /**
+             * Basket Attribution Assumption
+             * @default false
+             */
+            basket_attribution_assumption: boolean;
+        };
+        /** SectorGroup */
+        SectorGroup: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: number;
+            /** Exposure Pct */
+            exposure_pct: number;
+            /**
+             * Positions
+             * @default 0
+             */
+            positions: number;
+            /**
+             * Contributors
+             * @default []
+             */
+            contributors: string[];
         };
         /** SeriesPoint */
         SeriesPoint: {

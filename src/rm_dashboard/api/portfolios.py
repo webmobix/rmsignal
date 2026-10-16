@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from rm_dashboard.analytics import mandate as mandate_calc
+from rm_dashboard.analytics import sector as sector_calc
 
 from .context import ReadContext
 from .deps import AsOf, Ctx
@@ -99,6 +100,24 @@ class Facility(BaseModel):
     history: list[FacilityPoint] = []
 
 
+class SectorGroup(BaseModel):
+    name: str
+    value: float
+    exposure_pct: float
+    positions: int = 0
+    contributors: list[str] = []
+
+
+class SectorExposure(BaseModel):
+    """Sector exposure of one portfolio. Informational: no sector limits exist in the mandates."""
+
+    denominator: float = 0.0
+    denominator_label: str = ""
+    direct: list[SectorGroup] = []
+    look_through: list[SectorGroup] = []
+    basket_attribution_assumption: bool = False
+
+
 class PortfolioDetail(HasGaps):
     as_of: date
     snapshot_date: date | None
@@ -111,6 +130,7 @@ class PortfolioDetail(HasGaps):
     bands: list[Band]
     position_limit: PositionLimit
     holdings: list[HoldingRow]
+    sector_exposure: SectorExposure
     facilities: list[Facility]
 
 
@@ -215,7 +235,20 @@ def get_portfolio(ctx: Ctx, as_of: AsOf, portfolio_id: str) -> PortfolioDetail:
                 cur.sort("market_value_usd", descending=True).iter_rows(named=True)] if cur.height else []
     if not holdings:
         gaps.append(gap(f"no positions for {portfolio_id} at {as_of}", portfolio_id))
+    sectors = SectorExposure()
+    if cur.height:
+        sc = sector_calc.sector_look_through(cur, ctx.repo.instruments(as_of=as_of).frame)
+        if sc.status == "ok":
+            d = sc.data
+            sectors = SectorExposure(
+                denominator=d["denominator"], denominator_label=d["denominator_label"],
+                direct=[SectorGroup(**g) for g in d["direct"]], look_through=[SectorGroup(**g) for g in d["look_through"]],
+                basket_attribution_assumption=any(f.code == "basket_attribution_assumption" for f in sc.flags))
+            gaps += [gap(f.message, f.subject or portfolio_id, kind="other") for f in sc.flags
+                     if f.code != "basket_attribution_assumption"]
+        else:
+            gaps.append(gap(sc.reason or "sector exposure not available", portfolio_id))
     return PortfolioDetail(
         as_of=as_of, snapshot_date=eff, client_id=client_id, client_name=client["client_name"], portfolio=row,
         benchmark=pf["benchmark"], inception_date=pf["inception_date"], aum_history=history, bands=bands,
-        position_limit=limit, holdings=holdings, facilities=facilities_for(ctx, as_of, portfolio_id=portfolio_id), gaps=gaps)
+        position_limit=limit, holdings=holdings, sector_exposure=sectors, facilities=facilities_for(ctx, as_of, portfolio_id=portfolio_id), gaps=gaps)
