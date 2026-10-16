@@ -61,6 +61,26 @@ rm-dashboard-outlook -> rm-dashboard-analyse -> rm-dashboard-reconcile -> rm-das
 - **No effect on actions.** The importance rubric reads only structured evidence (KYC, LTV, liquidity, mandate,
   concentration), so an outlook can never raise an action's importance.
 
+## LLM call log
+
+Every runner logs each model call and a closing summary, to the console (stderr) and to `run.log` beside its `audit.jsonl`
+(`reports/<as_of>/run.log`, `.../reconciliation/`, `.../actions/`, `.../overview/`, `.../outlook/`). Python's standard
+`logging` is used; `RM_LOG_LEVEL` sets the level (default `INFO`). Code: `rm_dashboard/llmlog.py`.
+
+```
+2026-10-16 08:07:13,270 INFO llm_call runner=analyse run_id=run_ca8fb555680b thread_id=thread_dfcaecf5d2d1 agent=relationship_analyst subject=CL-0001 ms=1 in=670 out=276 total=946 outcome=ok
+2026-10-16 08:07:13,453 INFO llm_summary runner=analyse elapsed_s=0.253 llm_s=0.001 calls=21 failed=0 in=51789 out=4055 total=55844 without_usage=0
+```
+
+- **Grouping.** `thread_id` is created once per top-level graph run (per client, per instrument, per interactive session) and is
+  shared by its sub-agents and anything called from its tools: filter by it to see one run's calls. `run_id` is the audit run id.
+- **Summary.** Elapsed wall time, calls, failures, input/output/total tokens, the slowest call and the same per agent
+  (`llm_summary*` lines). Tokens a provider did not report show as `n/a` and are counted in `without_usage`, never as zero.
+  A `WARNING` line is added when a call failed or reported no usage.
+- **`summary.json`** gets an `llm` object with the counts and tokens only. Durations stay in the log so that a rerun on the same
+  inputs is byte-identical. A run with no model call (an unchanged outlook) prints its summary to the console and leaves `run.log` as it was.
+- **No content.** Prompts, responses and tool arguments are never logged, only ids, durations and counts. The audit trail is unchanged.
+
 ## Note reconciliation
 
 A second stage, run after the batch, checks what the RM's notes say about a client against what the client's report

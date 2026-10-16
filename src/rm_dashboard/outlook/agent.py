@@ -10,6 +10,7 @@ from rm_dashboard.agents.analyst import RECURSION_LIMIT, AnalystSpec, ModelFacto
 from rm_dashboard.agents.outputs import parse_json_object
 from rm_dashboard.agents.scope import RunScope
 from rm_dashboard.domain import Gap, ToolResult
+from rm_dashboard.llmlog import llm_config
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyDenied, PolicyEngine, PolicyEscalated, RunContext
 from rm_dashboard.policy.engine import COMPLIANCE_CONTENT, EVIDENCE_PROVENANCE
 from rm_dashboard.tools import ALLOWLISTS, ToolRegistry
@@ -81,7 +82,7 @@ def produce_market_outlook(registry: ToolRegistry, *, as_of: date, store: Outloo
         summary = ""
         try:
             result = agent.invoke({"messages": [HumanMessage(content=request_text(as_of, required))]},
-                                  config={"recursion_limit": RECURSION_LIMIT})
+                                  config={"recursion_limit": RECURSION_LIMIT, **llm_config(run, SPEC.name)})
             obj, err = parse_json_object(_final_text(result))
             if err:
                 gaps.append(Gap(kind="agent_error", description=err, subject=ROLE))
@@ -199,7 +200,7 @@ def produce_instrument_outlook(registry: ToolRegistry, *, instrument_id: str, as
         summary = ""
         try:
             result = agent.invoke({"messages": [HumanMessage(content=instrument_request_text(instrument_id, as_of))]},
-                                  config={"recursion_limit": RECURSION_LIMIT})
+                                  config={"recursion_limit": RECURSION_LIMIT, **llm_config(run, INSTRUMENT_SPEC.name)})
             obj, err = parse_json_object(_final_text(result))
             if err:
                 gaps.append(Gap(kind="agent_error", description=err, subject=ROLE))

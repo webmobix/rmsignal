@@ -16,6 +16,7 @@ from rm_dashboard.domain import Gap
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyEngine
 from rm_dashboard.reconciliation import Reconciliation, reconcile
 from rm_dashboard.reportsource import FolderReportSource
+from rm_dashboard.llmlog import llm_logging
 from rm_dashboard.settings import Settings
 from rm_dashboard.tools import ToolRegistry
 
@@ -43,38 +44,40 @@ def run_reconcile(registry: ToolRegistry, *, as_of: date, reports_dir: Path, cli
     source = FolderReportSource(reports_dir)
     out_dir = source.run_dir(as_of) / SUBDIR
     out_dir.mkdir(parents=True, exist_ok=True)
-    audit_path = out_dir / "audit.jsonl"
-    audit_path.unlink(missing_ok=True)
-    audit = AuditLog(audit_path)
-    engine = engine or MockPolicyEngine()
+    with llm_logging("reconcile", out_dir) as llm:
+        audit_path = out_dir / "audit.jsonl"
+        audit_path.unlink(missing_ok=True)
+        audit = AuditLog(audit_path)
+        engine = engine or MockPolicyEngine()
 
-    def one(cid: str) -> tuple[str, Reconciliation]:
-        try:
-            return cid, reconcile(registry, cid, as_of=as_of, source=source, model=models(ROLE), engine=engine, audit=audit)
-        except Exception as e:  # noqa: BLE001 - belt and braces: reconcile already never raises
-            gap = Gap(kind="agent_error", description=f"{type(e).__name__}: {e}")
-            return cid, Reconciliation(client_id=cid, as_of=as_of, status="partial", gaps=[gap])
+        def one(cid: str) -> tuple[str, Reconciliation]:
+            try:
+                return cid, reconcile(registry, cid, as_of=as_of, source=source, model=models(ROLE), engine=engine, audit=audit)
+            except Exception as e:  # noqa: BLE001 - belt and braces: reconcile already never raises
+                gap = Gap(kind="agent_error", description=f"{type(e).__name__}: {e}")
+                return cid, Reconciliation(client_id=cid, as_of=as_of, status="partial", gaps=[gap])
 
-    recs: dict[str, Reconciliation] = {}
-    with ThreadPoolExecutor(max_workers=max(1, settings.max_concurrency)) as pool:
-        for cid, rec in pool.map(one, ids):
-            recs[cid] = rec
-            (out_dir / f"{cid}.json").write_text(rec.model_dump_json(indent=2))
-            if progress:
-                progress(cid, rec)
+        recs: dict[str, Reconciliation] = {}
+        with ThreadPoolExecutor(max_workers=max(1, settings.max_concurrency)) as pool:
+            for cid, rec in pool.map(one, ids):
+                recs[cid] = rec
+                (out_dir / f"{cid}.json").write_text(rec.model_dump_json(indent=2))
+                if progress:
+                    progress(cid, rec)
 
-    status = Counter(r.status for r in recs.values())
-    verdicts = Counter(x.verdict for r in recs.values() for x in r.results)
-    summary = {
-        "as_of": as_of.isoformat(), "model": settings.model_name, "clients": len(recs),
-        "status_counts": {s: status.get(s, 0) for s in ("complete", "partial", "insufficient_data")},
-        "verdict_counts": {v: verdicts.get(v, 0) for v in ("consistent", "contradicted", "unverifiable")},
-        "reconciliations": {cid: {"status": r.status, "notes": len(r.results), "gaps": len(r.gaps), "file": f"{cid}.json"}
-                            for cid, r in recs.items()},
-        "audit_log": audit_path.name,
-    }
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-    return ReconcileResult(as_of, out_dir, recs, summary)
+        status = Counter(r.status for r in recs.values())
+        verdicts = Counter(x.verdict for r in recs.values() for x in r.results)
+        summary = {
+            "as_of": as_of.isoformat(), "model": settings.model_name, "clients": len(recs),
+            "status_counts": {s: status.get(s, 0) for s in ("complete", "partial", "insufficient_data")},
+            "verdict_counts": {v: verdicts.get(v, 0) for v in ("consistent", "contradicted", "unverifiable")},
+            "reconciliations": {cid: {"status": r.status, "notes": len(r.results), "gaps": len(r.gaps), "file": f"{cid}.json"}
+                                for cid, r in recs.items()},
+            "audit_log": audit_path.name,
+        }
+        summary["llm"] = llm.counts()
+        (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        return ReconcileResult(as_of, out_dir, recs, summary)
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:

@@ -15,6 +15,7 @@ from rm_dashboard.overview import Overview
 from rm_dashboard.overview.source import FolderOverviewSource, rms_at
 from rm_dashboard.overview.summary import ROLE, create_overview
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyEngine
+from rm_dashboard.llmlog import llm_logging
 from rm_dashboard.settings import Settings
 from rm_dashboard.tools import ToolRegistry
 
@@ -39,32 +40,34 @@ def run_overview(registry: ToolRegistry, *, as_of: date, reports_dir: Path, rm_i
     source = FolderOverviewSource(reports_dir)
     out_dir = source.reports.run_dir(as_of) / SUBDIR
     out_dir.mkdir(parents=True, exist_ok=True)
-    audit_path = out_dir / "audit.jsonl"
-    audit_path.unlink(missing_ok=True)
-    audit = AuditLog(audit_path)
-    engine = engine or MockPolicyEngine()
-    rms = rms_at(registry.ctx.repo, as_of)
-    overviews: dict[str, Overview] = {}
-    for rm_id, rm in rms.items():
-        if rm_ids and rm_id not in rm_ids:
-            continue
-        try:
-            ov = create_overview(registry, rm, as_of=as_of, source=source, model=models(ROLE), engine=engine, audit=audit)
-        except Exception as e:  # noqa: BLE001 - belt and braces: create_overview already never raises
-            ov = Overview(rm_id=rm_id, rm_name=rm.rm_name, as_of=as_of, status="partial", clients=[c.client_id for c in rm.clients],
-                          gaps=[Gap(kind="agent_error", description=f"{type(e).__name__}: {e}")])
-        overviews[rm_id] = ov
-        (out_dir / f"{rm_id}.json").write_text(ov.model_dump_json(indent=2))
-    status = Counter(o.status for o in overviews.values())
-    summary = {
-        "as_of": as_of.isoformat(), "model": settings.model_name, "rms": len(overviews),
-        "status_counts": {s: status.get(s, 0) for s in ("complete", "partial", "insufficient_data")},
-        "overviews": {rid: {"status": o.status, "actions": len(o.actions), "clients": len(o.clients), "gaps": len(o.gaps),
-                            "file": f"{rid}.json"} for rid, o in overviews.items()},
-        "audit_log": audit_path.name,
-    }
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-    return OverviewResult(as_of, out_dir, overviews, summary)
+    with llm_logging("overview", out_dir) as llm:
+        audit_path = out_dir / "audit.jsonl"
+        audit_path.unlink(missing_ok=True)
+        audit = AuditLog(audit_path)
+        engine = engine or MockPolicyEngine()
+        rms = rms_at(registry.ctx.repo, as_of)
+        overviews: dict[str, Overview] = {}
+        for rm_id, rm in rms.items():
+            if rm_ids and rm_id not in rm_ids:
+                continue
+            try:
+                ov = create_overview(registry, rm, as_of=as_of, source=source, model=models(ROLE), engine=engine, audit=audit)
+            except Exception as e:  # noqa: BLE001 - belt and braces: create_overview already never raises
+                ov = Overview(rm_id=rm_id, rm_name=rm.rm_name, as_of=as_of, status="partial", clients=[c.client_id for c in rm.clients],
+                              gaps=[Gap(kind="agent_error", description=f"{type(e).__name__}: {e}")])
+            overviews[rm_id] = ov
+            (out_dir / f"{rm_id}.json").write_text(ov.model_dump_json(indent=2))
+        status = Counter(o.status for o in overviews.values())
+        summary = {
+            "as_of": as_of.isoformat(), "model": settings.model_name, "rms": len(overviews),
+            "status_counts": {s: status.get(s, 0) for s in ("complete", "partial", "insufficient_data")},
+            "overviews": {rid: {"status": o.status, "actions": len(o.actions), "clients": len(o.clients), "gaps": len(o.gaps),
+                                "file": f"{rid}.json"} for rid, o in overviews.items()},
+            "audit_log": audit_path.name,
+        }
+        summary["llm"] = llm.counts()
+        (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        return OverviewResult(as_of, out_dir, overviews, summary)
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:

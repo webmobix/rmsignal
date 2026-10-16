@@ -18,6 +18,7 @@ from rm_dashboard.outlook.agent import produce_instrument_outlook, produce_marke
 from rm_dashboard.outlook.inputs import compute_inputs, held_instruments, instrument_inputs
 from rm_dashboard.outlook.store import OutlookStore
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyEngine
+from rm_dashboard.llmlog import llm_logging
 from rm_dashboard.settings import Settings
 from rm_dashboard.tools import ToolRegistry
 
@@ -64,63 +65,65 @@ def run_outlook(registry: ToolRegistry, *, as_of: date, reports_dir: Path, model
     repo = registry.ctx.repo
     store = OutlookStore(reports_dir)
     out_dir = store.outlook_dir(as_of)
-    audit_path = out_dir / "audit.jsonl"
-    audit: AuditLog | None = None
+    with llm_logging("outlook", out_dir) as llm:
+        audit_path = out_dir / "audit.jsonl"
+        audit: AuditLog | None = None
 
-    def the_audit() -> AuditLog:
-        nonlocal audit
-        if audit is None:  # the trail is append-only: a later run adds to it, nothing is ever removed
-            out_dir.mkdir(parents=True, exist_ok=True)
-            audit = AuditLog(audit_path)
-        return audit
+        def the_audit() -> AuditLog:
+            nonlocal audit
+            if audit is None:  # the trail is append-only: a later run adds to it, nothing is ever removed
+                out_dir.mkdir(parents=True, exist_ok=True)
+                audit = AuditLog(audit_path)
+            return audit
 
-    # ---- market ---------------------------------------------------------------------------
-    existing = store.load_market(as_of)
-    market_skipped = (existing is not None and not force and existing.status != "insufficient_data"
-                      and existing.inputs == compute_inputs(repo, as_of)[0])
-    if market_skipped:
-        market = existing
-    else:
-        market, evidence = produce_market_outlook(registry, as_of=as_of, store=store, models=models, engine=engine, audit=the_audit(), force=force)
-        store.save_market(market, evidence)
-
-    # ---- instruments ----------------------------------------------------------------------
-    ids = sorted(set(instrument_ids)) if instrument_ids else (held_instruments(repo, as_of) if with_instruments else [])
-    todo: list[str] = []
-    done: dict[str, InstrumentOutlook] = {}
-    skipped: set[str] = set()
-    for iid in ids:
-        old = store.load_instrument(as_of, iid)
-        if old is not None and not force and old.status != "insufficient_data" and old.inputs.same_as(instrument_inputs(repo, store, iid, as_of)[0]):
-            done[iid] = old
-            skipped.add(iid)
+        # ---- market ---------------------------------------------------------------------------
+        existing = store.load_market(as_of)
+        market_skipped = (existing is not None and not force and existing.status != "insufficient_data"
+                          and existing.inputs == compute_inputs(repo, as_of)[0])
+        if market_skipped:
+            market = existing
         else:
-            todo.append(iid)
+            market, evidence = produce_market_outlook(registry, as_of=as_of, store=store, models=models, engine=engine, audit=the_audit(), force=force)
+            store.save_market(market, evidence)
 
-    def one(iid: str):
-        try:
-            return iid, *produce_instrument_outlook(registry, instrument_id=iid, as_of=as_of, store=store, models=models, engine=engine,
-                                                    audit=the_audit(), force=force)
-        except Exception as e:  # noqa: BLE001 - belt and braces: produce_instrument_outlook already never raises
-            return iid, InstrumentOutlook(subject=iid, as_of=as_of, status="partial",
-                                          gaps=[Gap(kind="agent_error", description=f"{type(e).__name__}: {e}", subject=iid)]), []
+        # ---- instruments ----------------------------------------------------------------------
+        ids = sorted(set(instrument_ids)) if instrument_ids else (held_instruments(repo, as_of) if with_instruments else [])
+        todo: list[str] = []
+        done: dict[str, InstrumentOutlook] = {}
+        skipped: set[str] = set()
+        for iid in ids:
+            old = store.load_instrument(as_of, iid)
+            if old is not None and not force and old.status != "insufficient_data" and old.inputs.same_as(instrument_inputs(repo, store, iid, as_of)[0]):
+                done[iid] = old
+                skipped.add(iid)
+            else:
+                todo.append(iid)
 
-    if todo:
-        with ThreadPoolExecutor(max_workers=max(1, settings.max_concurrency)) as pool:
-            for iid, outlook, evidence in pool.map(one, todo):
-                store.save_instrument(outlook, evidence)
-                done[iid] = outlook
+        def one(iid: str):
+            try:
+                return iid, *produce_instrument_outlook(registry, instrument_id=iid, as_of=as_of, store=store, models=models, engine=engine,
+                                                        audit=the_audit(), force=force)
+            except Exception as e:  # noqa: BLE001 - belt and braces: produce_instrument_outlook already never raises
+                return iid, InstrumentOutlook(subject=iid, as_of=as_of, status="partial",
+                                              gaps=[Gap(kind="agent_error", description=f"{type(e).__name__}: {e}", subject=iid)]), []
 
-    detail = {iid: instrument_summary(done[iid]) for iid in ids}
-    counts = Counter(o.status for o in done.values())
-    summary = {"as_of": as_of.isoformat(), "model": settings.model_name, "market": market_summary(market),
-               "instruments": {"count": len(ids), "unchanged": len(skipped), "status_counts": {s: counts.get(s, 0) for s in STATUSES}, "detail": detail},
-               "audit_log": audit_path.name}
-    if audit is not None:  # something ran: the summary describes the state after it
-        (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-    elif (out_dir / "summary.json").is_file():
-        summary = json.loads((out_dir / "summary.json").read_text())
-    return OutlookResult(as_of, out_dir, market, summary, skipped=market_skipped, instruments=done, instruments_skipped=skipped)
+        if todo:
+            with ThreadPoolExecutor(max_workers=max(1, settings.max_concurrency)) as pool:
+                for iid, outlook, evidence in pool.map(one, todo):
+                    store.save_instrument(outlook, evidence)
+                    done[iid] = outlook
+
+        detail = {iid: instrument_summary(done[iid]) for iid in ids}
+        counts = Counter(o.status for o in done.values())
+        summary = {"as_of": as_of.isoformat(), "model": settings.model_name, "market": market_summary(market),
+                   "instruments": {"count": len(ids), "unchanged": len(skipped), "status_counts": {s: counts.get(s, 0) for s in STATUSES}, "detail": detail},
+                   "audit_log": audit_path.name}
+        summary["llm"] = llm.counts()
+        if audit is not None:  # something ran: the summary describes the state after it
+            (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        elif (out_dir / "summary.json").is_file():
+            summary = json.loads((out_dir / "summary.json").read_text())
+        return OutlookResult(as_of, out_dir, market, summary, skipped=market_skipped, instruments=done, instruments_skipped=skipped)
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:

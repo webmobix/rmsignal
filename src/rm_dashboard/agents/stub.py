@@ -23,6 +23,8 @@ class StubChatModel(BaseChatModel):
 
     role: str = "instrument_analyst"
     mode: str = "normal"
+    report_usage: bool = True
+    """False behaves like a provider that returns no token usage."""
     _bound: list[list[str]] = PrivateAttr(default_factory=list)
     _calls: int = PrivateAttr(default=0)
     _seen: list[list[BaseMessage]] = PrivateAttr(default_factory=list)
@@ -57,6 +59,10 @@ class StubChatModel(BaseChatModel):
         from .stubplans import plan_for  # local import: plans know tool and subagent names
 
         msg = plan_for(self.role, self.mode, messages)
+        if self.report_usage:  # about four characters per token, like a real tokenizer's order of magnitude
+            n_in = sum(len(str(m.content)) for m in messages) // 4 + 1
+            n_out = (len(str(msg.content)) + len(str(msg.tool_calls))) // 4 + 1
+            msg = msg.model_copy(update={"usage_metadata": {"input_tokens": n_in, "output_tokens": n_out, "total_tokens": n_in + n_out}})
         return ChatResult(generations=[ChatGeneration(message=msg)])
 
 

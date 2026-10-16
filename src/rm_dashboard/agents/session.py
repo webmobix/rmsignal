@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from rm_dashboard.domain import Gap, Report
+from rm_dashboard.llmlog import llm_config
 
 from .analyst import ANALYSTS, ModelFactory, RECURSION_LIMIT, _final_text, assemble_report, build_agent, request_message
 from .scope import RunScope
@@ -28,6 +29,7 @@ class AnalystSession:
         self.checkpointer = checkpointer or InMemorySaver()
         self.agent, self.toolbox = build_agent(self.spec, scope, models, requester=requester, checkpointer=self.checkpointer)
         self.requester = requester
+        self.scope.run.thread_id = self.thread_id
         self.started = False
         self._notice: str | None = None
 
@@ -58,7 +60,7 @@ class AnalystSession:
         before = len(self.toolbox.produced)
         try:
             out = self.agent.invoke({"messages": [message]}, config={
-                "configurable": {"thread_id": self.thread_id}, "recursion_limit": RECURSION_LIMIT})
+                "recursion_limit": RECURSION_LIMIT, **llm_config(scope.run, self.spec.name)})
             text = _final_text(out)
         except Exception as e:  # noqa: BLE001 - always-deliver
             scope.gaps.append(Gap(kind="agent_error", description=f"{type(e).__name__}: {e}", subject=self.spec.name))

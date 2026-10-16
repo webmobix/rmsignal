@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 
 from rm_dashboard.domain import Finding, Gap, Report
+from rm_dashboard.llmlog import llm_config
 from rm_dashboard.policy import PolicyDenied, PolicyEscalated
 from rm_dashboard.tools import ALLOWLISTS, Toolbox
 
@@ -128,7 +129,7 @@ def analyse(role: str, subject: str, scope: RunScope, models: ModelFactory, *, r
         agent, toolbox = build_agent(spec, scope, models, requester=requester, checkpointer=checkpointer)
         produced = toolbox.produced
         out = agent.invoke({"messages": [request_message(spec, subject, scope)]},
-                           config={"recursion_limit": RECURSION_LIMIT})
+                           config={"recursion_limit": RECURSION_LIMIT, **llm_config(run, role)})
         text = _final_text(out)
         return assemble_report(spec, subject, scope, produced, text, top_level)
     except Exception as e:  # noqa: BLE001 - always-deliver: nothing escapes as an unhandled error

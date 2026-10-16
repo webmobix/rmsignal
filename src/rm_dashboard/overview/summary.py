@@ -12,6 +12,7 @@ from rm_dashboard.agents.guard import evidence_numbers, unsupported_numbers
 from rm_dashboard.agents.scope import register_people
 from rm_dashboard.agents.stubplans import INPUT_MARKER
 from rm_dashboard.domain import Gap
+from rm_dashboard.llmlog import llm_config
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyDenied, PolicyEngine, PolicyEscalated, RunContext
 from rm_dashboard.policy.engine import COMPLIANCE_CONTENT, EVIDENCE_PROVENANCE
 from rm_dashboard.tools import ToolRegistry
@@ -111,7 +112,8 @@ def _ask(run: RunContext, model: BaseChatModel, text: str) -> tuple[Any, str | N
 
     safe = run.model_call(ROLE, [{"role": "system", "content": prompts.RM_OVERVIEW_SUMMARY}, {"role": "user", "content": text}])
     try:
-        reply = model.invoke([SystemMessage(content=safe[0]["content"]), HumanMessage(content=safe[1]["content"])])
+        reply = model.invoke([SystemMessage(content=safe[0]["content"]), HumanMessage(content=safe[1]["content"])],
+                           config=llm_config(run, ROLE))
     except Exception as e:  # noqa: BLE001
         return None, f"{type(e).__name__}: {e}"
     content = reply.content if isinstance(reply, AIMessage) and isinstance(reply.content, str) else ""

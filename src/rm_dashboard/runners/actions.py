@@ -17,6 +17,7 @@ from rm_dashboard.agents.analyst import ModelFactory
 from rm_dashboard.domain import Gap
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyEngine
 from rm_dashboard.reportsource import FolderReportSource
+from rm_dashboard.llmlog import llm_logging
 from rm_dashboard.settings import Settings
 from rm_dashboard.tools import ToolRegistry
 
@@ -42,38 +43,40 @@ def run_actions(registry: ToolRegistry, *, as_of: date, reports_dir: Path, clien
     source = FolderReportSource(reports_dir)
     out_dir = source.run_dir(as_of) / SUBDIR
     out_dir.mkdir(parents=True, exist_ok=True)
-    audit_path = out_dir / "audit.jsonl"
-    audit_path.unlink(missing_ok=True)
-    audit = AuditLog(audit_path)
-    engine = engine or MockPolicyEngine()
+    with llm_logging("actions", out_dir) as llm:
+        audit_path = out_dir / "audit.jsonl"
+        audit_path.unlink(missing_ok=True)
+        audit = AuditLog(audit_path)
+        engine = engine or MockPolicyEngine()
 
-    def one(cid: str) -> tuple[str, ClientActions]:
-        try:
-            return cid, derive_actions(registry, cid, as_of=as_of, source=source, model=models(ROLE), engine=engine, audit=audit)
-        except Exception as e:  # noqa: BLE001 - belt and braces: derive_actions already never raises
-            return cid, ClientActions(client_id=cid, as_of=as_of, status="partial",
-                                      gaps=[Gap(kind="agent_error", description=f"{type(e).__name__}: {e}")])
+        def one(cid: str) -> tuple[str, ClientActions]:
+            try:
+                return cid, derive_actions(registry, cid, as_of=as_of, source=source, model=models(ROLE), engine=engine, audit=audit)
+            except Exception as e:  # noqa: BLE001 - belt and braces: derive_actions already never raises
+                return cid, ClientActions(client_id=cid, as_of=as_of, status="partial",
+                                          gaps=[Gap(kind="agent_error", description=f"{type(e).__name__}: {e}")])
 
-    results: dict[str, ClientActions] = {}
-    with ThreadPoolExecutor(max_workers=max(1, settings.max_concurrency)) as pool:
-        for cid, res in pool.map(one, ids):
-            results[cid] = res
-            (out_dir / f"{cid}.json").write_text(res.model_dump_json(indent=2))
-            if progress:
-                progress(cid, res)
+        results: dict[str, ClientActions] = {}
+        with ThreadPoolExecutor(max_workers=max(1, settings.max_concurrency)) as pool:
+            for cid, res in pool.map(one, ids):
+                results[cid] = res
+                (out_dir / f"{cid}.json").write_text(res.model_dump_json(indent=2))
+                if progress:
+                    progress(cid, res)
 
-    status = Counter(r.status for r in results.values())
-    importance = Counter(a.importance for r in results.values() for a in r.actions)
-    summary = {
-        "as_of": as_of.isoformat(), "model": settings.model_name, "clients": len(results),
-        "status_counts": {s: status.get(s, 0) for s in ("complete", "partial", "insufficient_data")},
-        "importance_counts": {i: importance.get(i, 0) for i in ("critical", "high", "medium", "low")},
-        "clients_detail": {cid: {"status": r.status, "actions": len(r.actions), "not_actioned": len(r.not_actioned),
-                                 "gaps": len(r.gaps), "file": f"{cid}.json"} for cid, r in results.items()},
-        "audit_log": audit_path.name,
-    }
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-    return ActionsResult(as_of, out_dir, results, summary)
+        status = Counter(r.status for r in results.values())
+        importance = Counter(a.importance for r in results.values() for a in r.actions)
+        summary = {
+            "as_of": as_of.isoformat(), "model": settings.model_name, "clients": len(results),
+            "status_counts": {s: status.get(s, 0) for s in ("complete", "partial", "insufficient_data")},
+            "importance_counts": {i: importance.get(i, 0) for i in ("critical", "high", "medium", "low")},
+            "clients_detail": {cid: {"status": r.status, "actions": len(r.actions), "not_actioned": len(r.not_actioned),
+                                     "gaps": len(r.gaps), "file": f"{cid}.json"} for cid, r in results.items()},
+            "audit_log": audit_path.name,
+        }
+        summary["llm"] = llm.counts()
+        (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        return ActionsResult(as_of, out_dir, results, summary)
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:

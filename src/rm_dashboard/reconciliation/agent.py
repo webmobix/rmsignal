@@ -10,6 +10,7 @@ from rm_dashboard.agents import prompts
 from rm_dashboard.agents.outputs import parse_object_list
 from rm_dashboard.agents.stubplans import INPUT_MARKER
 from rm_dashboard.domain import Gap
+from rm_dashboard.llmlog import llm_config
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyDenied, PolicyEscalated, PolicyEngine, RunContext
 from rm_dashboard.policy.engine import COMPLIANCE_CONTENT, EVIDENCE_PROVENANCE
 from rm_dashboard.reportsource import FolderReportSource, flatten
@@ -94,7 +95,8 @@ def _all_unverifiable(notes: list[Note]) -> list[NoteResult]:
 def _ask(run: RunContext, model: BaseChatModel, text: str) -> tuple[list, str | None]:
     safe = run.model_call(ROLE, [{"role": "system", "content": prompts.NOTE_RECONCILER}, {"role": "user", "content": text}])
     try:
-        reply = model.invoke([SystemMessage(content=safe[0]["content"]), HumanMessage(content=safe[1]["content"])])
+        reply = model.invoke([SystemMessage(content=safe[0]["content"]), HumanMessage(content=safe[1]["content"])],
+                           config=llm_config(run, ROLE))
     except Exception as e:  # noqa: BLE001
         return [], f"{type(e).__name__}: {e}"
     content = reply.content if isinstance(reply, AIMessage) and isinstance(reply.content, str) else ""

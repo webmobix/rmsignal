@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from rm_dashboard.llmlog import current_llm_log
 from rm_dashboard.domain import Gap, PolicyDecisionRecord, Report, ToolResult
 from rm_dashboard.tools import ToolRefused
 
@@ -53,8 +54,13 @@ class RunContext:
     decisions: list[Decision] = field(default_factory=list)
     pending: dict[str, PendingEscalation] = field(default_factory=dict)
     _approved: set[tuple[str, str]] = field(default_factory=set)
+    thread_id: str = ""
+    """Groups every LLM call of one graph run (sub-agents and tools included); ``child()`` shares it."""
+    llm_log: Any = field(default_factory=current_llm_log)
 
     def __post_init__(self):
+        if not self.thread_id:
+            self.thread_id = f"thread_{uuid.uuid4().hex[:12]}"
         if not self.run_id:
             self.run_id = f"run_{uuid.uuid4().hex[:12]}"
 
@@ -99,6 +105,7 @@ class RunContext:
         c = RunContext(self.subject, self.as_of, self.engine, self.audit, self.pseudonymiser,
                        (*self.requester_chain, requester), self.run_id)
         c.decisions, c.pending, c._approved = self.decisions, self.pending, self._approved
+        c.thread_id, c.llm_log = self.thread_id, self.llm_log
         return c
 
     # ---- checkpoints at their places -----------------------------------------------
