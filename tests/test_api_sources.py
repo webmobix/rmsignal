@@ -118,12 +118,13 @@ def test_serve_missing_database_exits_with_seed_hint(tmp_path, monkeypatch):
     assert "rm-dashboard-seed" in str(exc.value)
 
 
-def test_serve_runs_app_with_db_from_env(seeded_db, monkeypatch):
+def test_serve_runs_app_with_db_from_env(seeded_db, monkeypatch, tmp_path):
     from rm_dashboard.api import serve
 
     calls = {}
     monkeypatch.setattr(serve.uvicorn, "run", lambda app, **kw: calls.update(app=app, **kw))
     monkeypatch.setenv("RM_DASHBOARD_DB", str(seeded_db))
+    monkeypatch.setenv("RM_DASHBOARD_REPORTS", str(tmp_path))
     serve.main(["--port", "9000"])
     assert calls["host"] == "127.0.0.1" and calls["port"] == 9000
     assert TestClient(calls["app"]).get("/docs").status_code == 200

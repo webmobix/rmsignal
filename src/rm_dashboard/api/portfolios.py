@@ -276,6 +276,11 @@ def facilities_for(ctx: ReadContext, as_of: date, *, client_id: str | None = Non
 
 @router.get("/portfolios/{portfolio_id}")
 def get_portfolio(ctx: Ctx, as_of: AsOf, portfolio_id: str) -> PortfolioDetail:
+    return assemble_detail(ctx, as_of, portfolio_id)[0]
+
+
+def assemble_detail(ctx: ReadContext, as_of: date, portfolio_id: str) -> tuple[PortfolioDetail, dict[str, list]]:
+    """The portfolio detail and its gaps by section (``mandate``, ``holdings``, ``ownership``), for reuse by the call sheet."""
     pfs = ctx.repo.portfolios(as_of=as_of, portfolio_id=portfolio_id).frame
     if pfs.is_empty():
         raise HTTPException(404, f"no portfolio {portfolio_id!r} at {as_of}")
@@ -288,13 +293,14 @@ def get_portfolio(ctx: Ctx, as_of: AsOf, portfolio_id: str) -> PortfolioDetail:
     rows, _ = portfolio_rows(ctx, as_of, client_id)
     row = next(r for r in rows if r.portfolio_id == portfolio_id)
     gaps = []
+    by_section: dict[str, list] = {"mandate": [], "holdings": [], "ownership": []}
     history = []
     if h_all.height:
         agg = h_all.group_by("snapshot_date").agg(
             pl.col("market_value_usd").sum().alias("usd"), pl.col("market_value_base").sum().alias("base")).sort("snapshot_date")
         history = [AumPoint(snapshot_date=r["snapshot_date"], aum_usd=r["usd"], aum_base=r["base"]) for r in agg.iter_rows(named=True)]
     status, data, g = mandate_check(ctx, as_of, pf, cur)
-    gaps += g
+    by_section["mandate"] += g
     recon = reconciliation_by_portfolio(ctx, as_of, client_id, detail=True)
     mine = (recon or {}).get(portfolio_id, [])
     by_ref = {(r.kind, r.key): r for r in mine}
@@ -305,7 +311,7 @@ def get_portfolio(ctx: Ctx, as_of: AsOf, portfolio_id: str) -> PortfolioDetail:
                                                               "via_instrument_name", "value", "weight_pct")},
                                           key=breach_key(b), status=r.status if r else "no_note", note_ids=r.note_ids if r else []))
     if recon is None and (row.breach_count or exclusions):
-        gaps.append(gap(f"no mandate reconciliation persisted for {client_id}", client_id))
+        by_section["mandate"].append(gap(f"no mandate reconciliation persisted for {client_id}", client_id))
     bands, limit = [], PositionLimit()
     if data:
         bands = [Band(**{k: b[k] for k in ("asset_class", "weight_pct", "min_pct", "target_pct", "max_pct", "gap_pp", "breach")},
@@ -321,7 +327,7 @@ def get_portfolio(ctx: Ctx, as_of: AsOf, portfolio_id: str) -> PortfolioDetail:
     holdings = [HoldingRow(**{k: r[k] for k in HoldingRow.model_fields}) for r in
                 cur.sort("market_value_usd", descending=True).iter_rows(named=True)] if cur.height else []
     if not holdings:
-        gaps.append(gap(f"no positions for {portfolio_id} at {as_of}", portfolio_id))
+        by_section["holdings"].append(gap(f"no positions for {portfolio_id} at {as_of}", portfolio_id))
     sectors = SectorExposure()
     if cur.height:
         sc = sector_calc.sector_look_through(cur, ctx.repo.instruments(as_of=as_of).frame)
@@ -331,11 +337,12 @@ def get_portfolio(ctx: Ctx, as_of: AsOf, portfolio_id: str) -> PortfolioDetail:
                 denominator=d["denominator"], denominator_label=d["denominator_label"],
                 direct=[SectorGroup(**g) for g in d["direct"]], look_through=[SectorGroup(**g) for g in d["look_through"]],
                 basket_attribution_assumption=any(f.code == "basket_attribution_assumption" for f in sc.flags))
-            gaps += [gap(f.message, f.subject or portfolio_id, kind="other") for f in sc.flags
-                     if f.code != "basket_attribution_assumption"]
+            by_section["ownership"] += [gap(f.message, f.subject or portfolio_id, kind="other") for f in sc.flags
+                                        if f.code != "basket_attribution_assumption"]
         else:
-            gaps.append(gap(sc.reason or "sector exposure not available", portfolio_id))
+            by_section["ownership"].append(gap(sc.reason or "sector exposure not available", portfolio_id))
+    gaps = by_section["mandate"] + by_section["holdings"] + by_section["ownership"]
     return PortfolioDetail(
         as_of=as_of, snapshot_date=eff, client_id=client_id, client_name=client["client_name"], portfolio=row,
         benchmark=pf["benchmark"], inception_date=pf["inception_date"], aum_history=history, bands=bands,
-        position_limit=limit, exclusion_breaches=exclusions, breach_reconciliation=mine, holdings=holdings, sector_exposure=sectors, facilities=facilities_for(ctx, as_of, portfolio_id=portfolio_id), gaps=gaps)
+        position_limit=limit, exclusion_breaches=exclusions, breach_reconciliation=mine, holdings=holdings, sector_exposure=sectors, facilities=facilities_for(ctx, as_of, portfolio_id=portfolio_id), gaps=gaps), by_section

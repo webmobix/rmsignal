@@ -9,18 +9,30 @@ type Detail = Schemas["PortfolioDetail"];
 export function BreachSection({
 	exclusions,
 	reconciliation,
+	embedded = false,
 }: {
 	exclusions: Detail["exclusion_breaches"];
 	reconciliation: Detail["breach_reconciliation"];
+	/** Inside another section: a small heading instead of a section of its own. */
+	embedded?: boolean;
 }) {
 	const noted = reconciliation.filter((r) => r.status !== "no_note");
 	if (!exclusions.length && !noted.length) return null;
 	const byKey = new Map(reconciliation.map((r) => [`${r.kind}/${r.key}`, r]));
 	return (
-		<section className="mt-10" aria-labelledby="breach-h">
-			<h2 id="breach-h" className="mb-3 text-[22px]">
-				Breaches and notes
-			</h2>
+		<section className={embedded ? "mt-4" : "mt-10"} aria-labelledby="breach-h">
+			{embedded ? (
+				<h3
+					id="breach-h"
+					className="mb-2 text-xs font-semibold uppercase text-ink-muted"
+				>
+					Breaches and notes
+				</h3>
+			) : (
+				<h2 id="breach-h" className="mb-3 text-[22px]">
+					Breaches and notes
+				</h2>
+			)}
 			{exclusions.length ? (
 				<ul className="space-y-1 text-[13px]" data-testid="exclusion-breaches">
 					{exclusions.map((b) => {
@@ -71,8 +83,8 @@ export function BreachSection({
 							))}
 							{r.waiver_claimed ? (
 								<p className="mt-1 text-xs text-ink-muted">
-									The waiver is the RM's statement and is not verified; the
-									breach stays flagged.
+									The waiver is the RM's statement and is not verified; it is a
+									claim to verify. The breach stays flagged.
 								</p>
 							) : null}
 						</li>

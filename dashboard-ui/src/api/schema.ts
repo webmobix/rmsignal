@@ -140,6 +140,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolios/{portfolio_id}/call-sheet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Call Sheet */
+        get: operations["get_call_sheet_api_portfolios__portfolio_id__call_sheet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/clients": {
         parameters: {
             query?: never;
@@ -515,6 +532,30 @@ export interface components {
              */
             crosses: "out" | "in";
         };
+        /** BankViewEntry */
+        BankViewEntry: {
+            /** Instrument Id */
+            instrument_id: string;
+            /** Instrument Name */
+            instrument_name: string;
+            /** Asset Class */
+            asset_class: string;
+            /** Weight Pct */
+            weight_pct: number;
+            /** Value Usd */
+            value_usd: number;
+            outlook?: components["schemas"]["OutlookEntry"] | null;
+        };
+        /** BankViewSection */
+        BankViewSection: {
+            /** Gaps */
+            gaps?: components["schemas"]["Gap"][];
+            /**
+             * Entries
+             * @default []
+             */
+            entries: components["schemas"]["BankViewEntry"][];
+        };
         /**
          * BreachReconciliation
          * @description What the RM's notes say about one computed breach. The portfolio list carries ids only; the detail adds the quotes.
@@ -559,6 +600,53 @@ export interface components {
              * @default []
              */
             notes: components["schemas"]["NoteQuote"][];
+        };
+        /** CallSheet */
+        CallSheet: {
+            /** Gaps */
+            gaps?: components["schemas"]["Gap"][];
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Snapshot Date */
+            snapshot_date: string | null;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Portfolio Name */
+            portfolio_name: string;
+            /** Client Id */
+            client_id: string;
+            /** Client Name */
+            client_name: string;
+            /** Mandate Name */
+            mandate_name: string;
+            /** Service Model */
+            service_model: string;
+            performance: components["schemas"]["PerformanceSection"];
+            mandate: components["schemas"]["MandateSection"];
+            ownership: components["schemas"]["OwnershipSection"];
+            bank_view: components["schemas"]["BankViewSection"];
+            events: components["schemas"]["EventsSection"];
+            cash_credit: components["schemas"]["CashCreditSection"];
+            conversation: components["schemas"]["ConversationSection"];
+        };
+        /** CashCreditSection */
+        CashCreditSection: {
+            /** Gaps */
+            gaps?: components["schemas"]["Gap"][];
+            /**
+             * Facilities
+             * @default []
+             */
+            facilities: components["schemas"]["Facility"][];
+            client_liquidity?: components["schemas"]["LiquiditySummary"] | null;
+            /**
+             * Client Level Note
+             * @default Client level: spans all of the client's portfolios, not only this one.
+             */
+            client_level_note: string;
         };
         /** CategoryGroup */
         CategoryGroup: {
@@ -830,6 +918,66 @@ export interface components {
             /** Facilities */
             facilities: components["schemas"]["Facility"][];
         };
+        /** Contributor */
+        Contributor: {
+            /** Instrument Id */
+            instrument_id: string;
+            /** Instrument Name */
+            instrument_name: string;
+            /** Value Usd From */
+            value_usd_from?: number | null;
+            /** Value Usd To */
+            value_usd_to?: number | null;
+            /** Change Usd */
+            change_usd: number;
+        };
+        /** ConversationSection */
+        ConversationSection: {
+            /** Gaps */
+            gaps?: components["schemas"]["Gap"][];
+            /**
+             * Notes
+             * @default []
+             */
+            notes: components["schemas"]["SheetNote"][];
+            /**
+             * Note Limit
+             * @default 10
+             */
+            note_limit: number;
+            /**
+             * Note Total
+             * @default 0
+             */
+            note_total: number;
+            /**
+             * Commitments
+             * @default []
+             */
+            commitments: components["schemas"]["SheetCommitment"][];
+            /**
+             * Scope
+             * @default client
+             * @constant
+             */
+            scope: "client";
+            /**
+             * Client Level Note
+             * @default Client level: spans all of the client's portfolios, not only this one.
+             */
+            client_level_note: string;
+        };
+        /** EventInstrument */
+        EventInstrument: {
+            /** Instrument Id */
+            instrument_id: string;
+            /** Instrument Name */
+            instrument_name: string;
+            /** Matched On */
+            matched_on: {
+                [key: string]: unknown;
+            }[];
+        };
         /** EventOut */
         EventOut: {
             /**
@@ -908,6 +1056,16 @@ export interface components {
             as_of: string;
             /** Events */
             events: components["schemas"]["EventWithReach"][];
+        };
+        /** EventsSection */
+        EventsSection: {
+            /** Gaps */
+            gaps?: components["schemas"]["Gap"][];
+            /**
+             * Events
+             * @default []
+             */
+            events: components["schemas"]["MatchedEvent"][];
         };
         /** EvidenceResponse */
         EvidenceResponse: {
@@ -1380,6 +1538,48 @@ export interface components {
             /** Items */
             items: components["schemas"]["LiquidityItem"][];
         };
+        /** MandateSection */
+        MandateSection: {
+            /** Gaps */
+            gaps?: components["schemas"]["Gap"][];
+            /**
+             * Applicable
+             * @default true
+             */
+            applicable: boolean;
+            /**
+             * Statement
+             * @default
+             */
+            statement: string;
+            /**
+             * Bands
+             * @default []
+             */
+            bands: components["schemas"]["Band"][];
+            /**
+             * @default {
+             *       "breaches": [],
+             *       "note": ""
+             *     }
+             */
+            position_limit: components["schemas"]["PositionLimit"];
+            /**
+             * Exclusion Breaches
+             * @default []
+             */
+            exclusion_breaches: components["schemas"]["ExclusionBreach"][];
+            /**
+             * Breach Reconciliation
+             * @default []
+             */
+            breach_reconciliation: components["schemas"]["BreachReconciliation"][];
+            /**
+             * Open Actions
+             * @default []
+             */
+            open_actions: components["schemas"]["OpenAction"][];
+        };
         /**
          * MarketContext
          * @description A segment view of the market outlook, copied by code and shown as it stands there.
@@ -1490,6 +1690,28 @@ export interface components {
             as_of: string;
             outlook?: components["schemas"]["MarketOutlook"] | null;
         };
+        /** MatchedEvent */
+        MatchedEvent: {
+            /**
+             * Event Date
+             * Format: date
+             */
+            event_date: string;
+            /** Event Type */
+            event_type: string;
+            /** Region */
+            region: string;
+            /** Description */
+            description: string;
+            /** Severity */
+            severity: string;
+            /** Primary Transmission */
+            primary_transmission: string;
+            /** Event Id */
+            event_id: string;
+            /** Instruments */
+            instruments: components["schemas"]["EventInstrument"][];
+        };
         /** MeetingClient */
         MeetingClient: {
             /** Client Id */
@@ -1577,6 +1799,42 @@ export interface components {
             /** Quote */
             quote: string;
         };
+        /** OpenAction */
+        OpenAction: {
+            /** Action Id */
+            action_id: string;
+            /** Title */
+            title: string;
+            /** Category */
+            category: string;
+            /** Importance */
+            importance: string;
+            /** Horizon */
+            horizon: string;
+            /** Due Date */
+            due_date?: string | null;
+        };
+        /**
+         * OutlookEntry
+         * @description The bank's view of one instrument as of ``as_of`` (its own date), copied from the persisted outlook.
+         */
+        OutlookEntry: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Older Than As Of */
+            older_than_as_of: boolean;
+            view: components["schemas"]["InstrumentView"];
+            /** Market Outlook As Of */
+            market_outlook_as_of?: string | null;
+            /**
+             * Market Context
+             * @default []
+             */
+            market_context: components["schemas"]["MarketContext"][];
+        };
         /**
          * OutlookInputs
          * @description The data an outlook rests on; equal inputs mean nothing new has arrived.
@@ -1611,6 +1869,63 @@ export interface components {
              * @default 0
              */
             max_urgency: number;
+        };
+        /** OwnershipSection */
+        OwnershipSection: {
+            /** Gaps */
+            gaps?: components["schemas"]["Gap"][];
+            /**
+             * @default {
+             *       "denominator": 0,
+             *       "denominator_label": "",
+             *       "direct": [],
+             *       "look_through": [],
+             *       "basket_attribution_assumption": false
+             *     }
+             */
+            sector_exposure: components["schemas"]["SectorExposure"];
+            /**
+             * Unclassified Pct
+             * @default {}
+             */
+            unclassified_pct: {
+                [key: string]: number;
+            };
+        };
+        /** PerformanceSection */
+        PerformanceSection: {
+            /** Gaps */
+            gaps?: components["schemas"]["Gap"][];
+            /** Snapshot Date */
+            snapshot_date?: string | null;
+            /** Previous Snapshot Date */
+            previous_snapshot_date?: string | null;
+            /**
+             * Aum Usd
+             * @default 0
+             */
+            aum_usd: number;
+            /** Previous Aum Usd */
+            previous_aum_usd?: number | null;
+            /** Change Usd */
+            change_usd?: number | null;
+            /** Change Pct */
+            change_pct?: number | null;
+            /**
+             * Contributors
+             * @default []
+             */
+            contributors: components["schemas"]["Contributor"][];
+            /**
+             * Findings
+             * @default []
+             */
+            findings: components["schemas"]["SheetFinding"][];
+            /**
+             * Events
+             * @default []
+             */
+            events: components["schemas"]["SheetEvent"][];
         };
         /** PolicyDecisionRecord */
         PolicyDecisionRecord: {
@@ -2058,6 +2373,70 @@ export interface components {
             /** Aum Usd */
             aum_usd: number;
         };
+        /** SheetCommitment */
+        SheetCommitment: {
+            /** Commitment Id */
+            commitment_id: string;
+            /** Portfolio Id */
+            portfolio_id?: string | null;
+            /** Fund Name */
+            fund_name: string;
+            /** Currency */
+            currency: string;
+            /** Committed */
+            committed: number;
+            /** Called To Date */
+            called_to_date: number;
+            /** Uncalled */
+            uncalled: number;
+            /** Expected Call Window */
+            expected_call_window?: string | null;
+        };
+        /** SheetEvent */
+        SheetEvent: {
+            /**
+             * Event Date
+             * Format: date
+             */
+            event_date: string;
+            /** Event Type */
+            event_type: string;
+            /** Region */
+            region: string;
+            /** Description */
+            description: string;
+            /** Severity */
+            severity: string;
+            /** Primary Transmission */
+            primary_transmission: string;
+            /** Event Id */
+            event_id: string;
+        };
+        /** SheetFinding */
+        SheetFinding: {
+            /** Ref */
+            ref: string;
+            /** Claim */
+            claim: string;
+            /** Confidence */
+            confidence: string;
+            /** Evidence Ids */
+            evidence_ids: string[];
+        };
+        /** SheetNote */
+        SheetNote: {
+            /** Note Id */
+            note_id: string;
+            /**
+             * Note Date
+             * Format: date
+             */
+            note_date: string;
+            /** Channel */
+            channel: string;
+            /** Note */
+            note: string;
+        };
         /** Slice */
         Slice: {
             /** Key */
@@ -2487,6 +2866,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PortfolioDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_call_sheet_api_portfolios__portfolio_id__call_sheet_get: {
+        parameters: {
+            query?: {
+                /** @description ISO date or 'latest' */
+                as_of?: string;
+            };
+            header?: never;
+            path: {
+                portfolio_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CallSheet"];
                 };
             };
             /** @description Validation Error */

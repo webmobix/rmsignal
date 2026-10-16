@@ -86,21 +86,82 @@ def make_scope(registry, outlook_registry):
     return make
 
 
-REPORTS = Path(__file__).parent.parent / "reports"
+@pytest.fixture(scope="session")
+def api_reports(seeded_db, tmp_path_factory) -> Path:
+    """A small, deterministic run of every stage, built in a temp folder (never ``reports/``).
+
+    Market outlook and two instrument outlooks; analysis for CL-0001, CL-0002, CL-0003 and CL-0011; client actions for
+    the same four; the RM overview over them. For CL-0001 the model of the note reconciliation and of the actions is
+    scripted from the persisted report, so it has a contradicted and a consistent note and actions that cite a
+    portfolio-level finding; everything else uses the stub model.
+    """
+    import json
+    from datetime import date
+
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    from rm_dashboard.agents import StubChatModel
+    from rm_dashboard.reportsource import FolderReportSource, flatten
+    from rm_dashboard.runners import open_registry, run_batch
+    from rm_dashboard.runners.actions import run_actions
+    from rm_dashboard.runners.outlook import run_outlook
+    from rm_dashboard.runners.overview import run_overview
+    from rm_dashboard.runners.reconcile import run_reconcile
+    from rm_dashboard.settings import Settings
+
+    out = tmp_path_factory.mktemp("api_run")
+    as_of = date(2026, 8, 26)
+    clients = ["CL-0001", "CL-0002", "CL-0003", "CL-0011"]
+
+    def stub(role):
+        return StubChatModel(role=role)
+
+    def first(flat, pattern, portfolio=False):
+        import re
+
+        return next(f for f in flat if re.search(pattern, f.claim) and (("/" in f.report_path) == portfolio))
+
+    with open_registry(Settings(db_path=str(seeded_db), max_concurrency=4)) as reg:
+        run_outlook(reg, as_of=as_of, reports_dir=out, models=stub, instrument_ids=["SYN-EQ-0001", "SYN-CM-0401"])
+        run_batch(reg, as_of=as_of, out_dir=out, client_ids=clients, models=stub)
+        flat = flatten(FolderReportSource(out).report(as_of, "CL-0001"))
+        kyc, conc, credit = (first(flat, r) for r in (r"KYC review is", r"largest single-name", r"LTV is"))
+        pf_finding = next(f for f in flat if "/PF-0001" in f.report_path and f.evidence_ids)
+        reconciliation = {"results": [
+            {"note_id": "N-001", "verdict": "contradicted", "finding_refs": [conc.ref],
+             "rationale": "The note says the client wants less energy exposure but the report still shows a single-name concentration."},
+            {"note_id": "N-002", "verdict": "consistent", "finding_refs": [pf_finding.ref],
+             "rationale": "The report findings for the portfolio support what the note says."}]}
+        run_reconcile(reg, as_of=as_of, reports_dir=out, client_ids=["CL-0001"],
+                      models=lambda role: FakeListChatModel(responses=[json.dumps(reconciliation)]))
+        scripted = {"actions": [
+            {"category": "compliance_kyc", "importance": "medium", "title": "Prepare the KYC review", "what": "Prepare the periodic review.",
+             "why": "The report shows the review date.", "refs": [kyc.ref]},
+            {"category": "concentration_risk", "importance": "high", "title": "Discuss the concentration", "what": "Review the exposure.",
+             "why": "The report shows a concentrated name.", "refs": [conc.ref]},
+            {"category": "mandate_drift", "importance": "high", "title": "Check the portfolio", "what": "Review the portfolio finding.",
+             "why": "The portfolio report raises it.", "refs": [pf_finding.ref]},
+            {"category": "credit_collateral", "importance": "medium", "title": "Review the credit facility", "what": "Review the headroom.",
+             "why": "The report shows the facility.", "refs": [credit.ref]},
+            {"category": "client_contact", "importance": "low", "title": "Follow up on note N-001", "what": "Discuss the difference.",
+             "why": "The note and the book disagree.", "refs": ["N-001"]}]}
+        run_actions(reg, as_of=as_of, reports_dir=out, client_ids=["CL-0001"],
+                    models=lambda role: FakeListChatModel(responses=[json.dumps(scripted)]))
+        run_actions(reg, as_of=as_of, reports_dir=out, client_ids=clients[1:], models=stub)
+        run_overview(reg, as_of=as_of, reports_dir=out, models=stub)
+    return out
 
 
 @pytest.fixture(scope="session")
-def api(seeded_db):
-    """The API on the seeded data and the persisted run in ``reports/`` (skipped when there is none)."""
+def api(seeded_db, api_reports):
+    """The API on the seeded data and the run built by ``api_reports``."""
     from fastapi.testclient import TestClient
 
     from rm_dashboard.api import create_app
 
-    if not (REPORTS / "2026-08-26").is_dir():
-        pytest.skip("no persisted run in reports/")
-    return TestClient(create_app(seeded_db, REPORTS))
+    return TestClient(create_app(seeded_db, api_reports))
 
 
 @pytest.fixture(scope="session")
-def reports_dir(api) -> Path:
-    return REPORTS
+def reports_dir(api_reports) -> Path:
+    return api_reports

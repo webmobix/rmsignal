@@ -55,7 +55,7 @@ describe("BreachSection", () => {
 		expect(notes).toHaveTextContent("Commodities weight is 14.20%");
 		expect(notes).toHaveTextContent("waiver claimed (N-010)");
 		expect(notes).toHaveTextContent(/Suitability waiver on file/);
-		expect(notes).toHaveTextContent(/not verified; the breach stays flagged/);
+		expect(notes).toHaveTextContent(/claim to verify/);
 		expect(notes).not.toHaveTextContent("Fixed Income");
 	});
 	it("lists an exclusion breach with its weight and status", () => {

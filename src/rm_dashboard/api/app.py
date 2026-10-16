@@ -7,6 +7,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 
 from ..data.datasource import SqliteDataSource
+from .callsheet import router as callsheet_router
 from .clients import router as clients_router
 from .context import ReadContext
 from .core import router as core_router
@@ -58,6 +59,7 @@ def create_app(db_path: str | Path, reports_dir: str | Path | None = None,
     app.include_router(overview_router)
     app.include_router(evidence_router)
     app.include_router(portfolios_router)
+    app.include_router(callsheet_router)
     app.include_router(clients_router)
     app.include_router(instruments_router)
     app.include_router(market_router)

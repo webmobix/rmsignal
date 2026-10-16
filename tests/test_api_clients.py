@@ -7,15 +7,24 @@ def _client(api, cid):
     return r.json()
 
 
-def test_client_list_covers_the_whole_book(api):
+def _persisted_action_counts(reports_dir):
+    import json
+
+    files = (reports_dir / "2026-08-26" / "actions").glob("CL-*.json")
+    return {p.stem: len(json.loads(p.read_text())["actions"]) for p in files}
+
+
+def test_client_list_covers_the_whole_book(api, reports_dir):
     rows = api.get("/api/clients").json()
     assert len(rows) == 20
     by = {r["client_id"]: r for r in rows}
     assert by["CL-0001"]["portfolio_count"] == 2 and by["CL-0017"]["portfolio_count"] == 3
-    assert by["CL-0001"]["action_count"] == 5 and by["CL-0001"]["max_urgency"] > 0
+    counts = _persisted_action_counts(reports_dir)
+    assert by["CL-0001"]["action_count"] == counts["CL-0001"] == 5 and by["CL-0001"]["max_urgency"] > 0
     assert by["CL-0001"]["top_importance"] == "high" and by["CL-0001"]["report_status"] == "partial"
     assert by["CL-0004"]["action_count"] == 0 and by["CL-0004"]["max_urgency"] == 0 and by["CL-0004"]["top_importance"] is None
-    assert sum(r["action_count"] for r in rows) == 16 and sum(r["action_count"] > 0 for r in rows) == 3
+    assert sum(r["action_count"] for r in rows) == sum(counts.values())
+    assert {r["client_id"] for r in rows if r["action_count"] > 0} == set(counts) == {"CL-0001", "CL-0002", "CL-0003", "CL-0011"}
     assert all(r["aum_usd"] > 0 for r in rows)
 
 

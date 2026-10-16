@@ -1,4 +1,5 @@
 import { useParams } from "@tanstack/react-router";
+import { useState } from "react";
 import type { Schemas } from "#/api/client";
 import { useData } from "#/api/queries";
 import { BandsChart } from "#/components/charts/BandsChart";
@@ -12,9 +13,11 @@ import { IdLink } from "#/components/IdLink";
 import { MetricStrip } from "#/components/MetricStrip";
 import { PageHeader } from "#/components/PageHeader";
 import { EmptyNotice, StateBoundary } from "#/components/StateBoundary";
+import { Tabs } from "#/components/Tabs";
 import { fmtDate, fmtPct, fmtUsd } from "#/lib/format";
 import { MandateStatus } from "../clients/PortfolioList";
 import { BreachSection } from "./BreachSection";
+import { CallSheet } from "./CallSheet";
 import { SectorSection } from "./SectorSection";
 
 type Detail = Schemas["PortfolioDetail"];
@@ -73,6 +76,7 @@ export function PortfolioPage() {
 	const { portfolioId } = useParams({ from: "/portfolios/$portfolioId" });
 	const query = useData<Detail>(`/portfolios/${portfolioId}`);
 	const d = query.data;
+	const [tab, setTab] = useState("portfolio");
 	return (
 		<>
 			<PageHeader
@@ -91,154 +95,172 @@ export function PortfolioPage() {
 					) : undefined
 				}
 			/>
-			<StateBoundary query={query} label="Loading portfolio">
-				{(p) => {
-					const statements = p.bands
-						.map(bandStatement)
-						.filter((s): s is string => s !== null);
-					return (
-						<div data-testid="portfolio-page">
-							<MetricStrip
-								metrics={[
-									{
-										key: "aum",
-										label: "AuM",
-										value: fmtUsd(p.portfolio.aum_usd),
-									},
-									{
-										key: "change",
-										label: "Since previous snapshot",
-										value: fmtPct(p.portfolio.change_pct, 1, true),
-										hint: fmtUsd(p.portfolio.change_usd),
-									},
-									{
-										key: "mandate",
-										label: "Mandate status",
-										value: (
-											<MandateStatus
-												status={p.portfolio.mandate_status}
-												breaches={p.portfolio.breach_count}
-												reconciliation={p.portfolio.breach_reconciliation}
-											/>
-										),
-									},
-									{
-										key: "holdings",
-										label: "Holdings",
-										value: p.holdings.length,
-									},
-								]}
-							/>
-							<section className="mt-10" aria-labelledby="pf-hist">
-								<h2 id="pf-hist" className="mb-3 text-[22px]">
-									AuM history
-								</h2>
-								<LineTrend
-									points={p.aum_history.map((h) => ({
-										date: h.snapshot_date,
-										value: h.aum_usd,
-									}))}
-									ariaLabel="Portfolio AuM over time"
-									yLabel="AuM (USD)"
-									format={(v) => `${(v / 1e6).toFixed(0)}M`}
+			<div className="mt-6">
+				<Tabs
+					tabs={[
+						{ id: "portfolio", label: "Portfolio" },
+						{ id: "call-sheet", label: "Call sheet" },
+					]}
+					value={tab}
+					onChange={setTab}
+				/>
+			</div>
+			{tab === "call-sheet" ? <CallSheet portfolioId={portfolioId} /> : null}
+			{tab === "portfolio" ? (
+				<StateBoundary query={query} label="Loading portfolio">
+					{(p) => {
+						const statements = p.bands
+							.map(bandStatement)
+							.filter((s): s is string => s !== null);
+						return (
+							<div data-testid="portfolio-page">
+								<MetricStrip
+									metrics={[
+										{
+											key: "aum",
+											label: "AuM",
+											value: fmtUsd(p.portfolio.aum_usd),
+										},
+										{
+											key: "change",
+											label: "Since previous snapshot",
+											value: fmtPct(p.portfolio.change_pct, 1, true),
+											hint: fmtUsd(p.portfolio.change_usd),
+										},
+										{
+											key: "mandate",
+											label: "Mandate status",
+											value: (
+												<MandateStatus
+													status={p.portfolio.mandate_status}
+													breaches={p.portfolio.breach_count}
+													reconciliation={p.portfolio.breach_reconciliation}
+												/>
+											),
+										},
+										{
+											key: "holdings",
+											label: "Holdings",
+											value: p.holdings.length,
+										},
+									]}
 								/>
-							</section>
-							<section className="mt-10" aria-labelledby="bands-h">
-								<h2 id="bands-h" className="mb-3 text-[22px]">
-									Mandate bands
-								</h2>
-								{p.bands.length ? (
-									<>
-										<BandsChart bands={p.bands} />
-										{statements.length ? (
-											<ul
-												className="mt-3 space-y-1 text-[13px] font-medium text-alert"
-												data-testid="band-breaches"
-											>
-												{statements.map((s) => (
-													<li key={s}>{s}</li>
-												))}
-											</ul>
-										) : (
-											<p className="mt-3 text-[13px] text-positive">
-												All asset classes are within their bands.
-											</p>
-										)}
-									</>
-								) : (
-									<EmptyNotice>
-										{p.position_limit?.note ||
-											"No mandate bands apply to this portfolio."}
-									</EmptyNotice>
-								)}
-								{p.position_limit &&
-								p.position_limit.max_single_position_pct != null ? (
-									<p className="mt-3 text-xs text-ink-2">
-										Largest position{" "}
-										<IdLink id={p.position_limit.largest_instrument_id ?? ""} />{" "}
-										at{" "}
-										<span className="num">
-											{fmtPct(p.position_limit.largest_weight_pct)}
-										</span>{" "}
-										against a single-position limit of{" "}
-										<span className="num">
-											{fmtPct(p.position_limit.max_single_position_pct)}
-										</span>
-										{p.position_limit.breaches.length ? (
-											<b className="text-alert"> (breached)</b>
-										) : null}
-										.
-									</p>
-								) : null}
-							</section>
-							<BreachSection
-								exclusions={p.exclusion_breaches}
-								reconciliation={p.breach_reconciliation}
-							/>
-							<section className="mt-10" aria-labelledby="sector-h">
-								<h2 id="sector-h" className="mb-3 text-[22px]">
-									Sector exposure
-								</h2>
-								<SectorSection exposure={p.sector_exposure} />
-							</section>
-							<section className="mt-10" aria-labelledby="hold-h">
-								<h2 id="hold-h" className="mb-3 text-[22px]">
-									Holdings
-								</h2>
-								<DataTable
-									columns={columns}
-									data={p.holdings}
-									initialSort={{ id: "weight_pct", desc: true }}
-									rowId={(h) => h.instrument_id}
-								/>
-							</section>
-							{p.facilities.map((f) => (
-								<section
-									key={f.facility_id}
-									className="mt-10"
-									aria-labelledby={`ltv-${f.facility_id}`}
-								>
-									<h2 id={`ltv-${f.facility_id}`} className="mb-3 text-[22px]">
-										Loan-to-value · {f.facility_type}
+								<section className="mt-10" aria-labelledby="pf-hist">
+									<h2 id="pf-hist" className="mb-3 text-[22px]">
+										AuM history
 									</h2>
 									<LineTrend
-										points={f.history.map((h) => ({
+										points={p.aum_history.map((h) => ({
 											date: h.snapshot_date,
-											value: h.ltv_pct,
+											value: h.aum_usd,
 										}))}
-										ariaLabel={`LTV history for ${f.facility_id}`}
-										yLabel="LTV (%)"
-										rule={{
-											value: f.margin_call_ltv_pct,
-											label: `Margin-call trigger ${f.margin_call_ltv_pct}%`,
-										}}
+										ariaLabel="Portfolio AuM over time"
+										yLabel="AuM (USD)"
+										format={(v) => `${(v / 1e6).toFixed(0)}M`}
 									/>
 								</section>
-							))}
-						</div>
-					);
-				}}
-			</StateBoundary>
+								<section className="mt-10" aria-labelledby="bands-h">
+									<h2 id="bands-h" className="mb-3 text-[22px]">
+										Mandate bands
+									</h2>
+									{p.bands.length ? (
+										<>
+											<BandsChart bands={p.bands} />
+											{statements.length ? (
+												<ul
+													className="mt-3 space-y-1 text-[13px] font-medium text-alert"
+													data-testid="band-breaches"
+												>
+													{statements.map((s) => (
+														<li key={s}>{s}</li>
+													))}
+												</ul>
+											) : (
+												<p className="mt-3 text-[13px] text-positive">
+													All asset classes are within their bands.
+												</p>
+											)}
+										</>
+									) : (
+										<EmptyNotice>
+											{p.position_limit?.note ||
+												"No mandate bands apply to this portfolio."}
+										</EmptyNotice>
+									)}
+									{p.position_limit &&
+									p.position_limit.max_single_position_pct != null ? (
+										<p className="mt-3 text-xs text-ink-2">
+											Largest position{" "}
+											<IdLink
+												id={p.position_limit.largest_instrument_id ?? ""}
+											/>{" "}
+											at{" "}
+											<span className="num">
+												{fmtPct(p.position_limit.largest_weight_pct)}
+											</span>{" "}
+											against a single-position limit of{" "}
+											<span className="num">
+												{fmtPct(p.position_limit.max_single_position_pct)}
+											</span>
+											{p.position_limit.breaches.length ? (
+												<b className="text-alert"> (breached)</b>
+											) : null}
+											.
+										</p>
+									) : null}
+								</section>
+								<BreachSection
+									exclusions={p.exclusion_breaches}
+									reconciliation={p.breach_reconciliation}
+								/>
+								<section className="mt-10" aria-labelledby="sector-h">
+									<h2 id="sector-h" className="mb-3 text-[22px]">
+										Sector exposure
+									</h2>
+									<SectorSection exposure={p.sector_exposure} />
+								</section>
+								<section className="mt-10" aria-labelledby="hold-h">
+									<h2 id="hold-h" className="mb-3 text-[22px]">
+										Holdings
+									</h2>
+									<DataTable
+										columns={columns}
+										data={p.holdings}
+										initialSort={{ id: "weight_pct", desc: true }}
+										rowId={(h) => h.instrument_id}
+									/>
+								</section>
+								{p.facilities.map((f) => (
+									<section
+										key={f.facility_id}
+										className="mt-10"
+										aria-labelledby={`ltv-${f.facility_id}`}
+									>
+										<h2
+											id={`ltv-${f.facility_id}`}
+											className="mb-3 text-[22px]"
+										>
+											Loan-to-value · {f.facility_type}
+										</h2>
+										<LineTrend
+											points={f.history.map((h) => ({
+												date: h.snapshot_date,
+												value: h.ltv_pct,
+											}))}
+											ariaLabel={`LTV history for ${f.facility_id}`}
+											yLabel="LTV (%)"
+											rule={{
+												value: f.margin_call_ltv_pct,
+												label: `Margin-call trigger ${f.margin_call_ltv_pct}%`,
+											}}
+										/>
+									</section>
+								))}
+							</div>
+						);
+					}}
+				</StateBoundary>
+			) : null}
 		</>
 	);
 }

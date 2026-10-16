@@ -98,6 +98,7 @@ An unknown id answers 404.
 | `GET /api/clients/{client_id}/aum-history` | AuM at every snapshot, per portfolio and in total, with the events in range |
 | `GET /api/clients/{client_id}/snapshot-changes` | what changed between two snapshots (`?from=&to=`) |
 | `GET /api/portfolios/{portfolio_id}` | header, AuM history, mandate bands, holdings, sector exposure, position limit, facilities |
+| `GET /api/portfolios/{portfolio_id}/call-sheet` | seven sections for a client call: performance, mandate, ownership, bank view, events, cash and credit, conversation |
 
 **Currency.** The dataset's `aum_<date>` per portfolio is in the portfolio's base currency, so portfolios of one client cannot be
 added up. Every sum across portfolios in the API is of `market_value_usd` and named `*_usd`; `aum_base` and `base_currency` are
@@ -158,6 +159,22 @@ a product whose underlying is not identifiable); a gap names each product and un
 (`Diversified`, `Corporate`, `Sovereign`, `Cash`, `Gold`, `Multi`, `Macro`) are their own groups. `basket_attribution_assumption`
 is true when a basket product's value was split equally across its underlyings. Informational: no sector limit exists in the
 mandates. A portfolio without positions has empty lists and a gap.
+
+**`/api/portfolios/{id}/call-sheet`.** Everything for a client call about one portfolio in one read-only response, built from
+the seeded data and persisted output; no model is called and no batch stage is started. It returns the portfolio header and
+seven sections, each with its own `gaps`; a section that cannot be built is empty with a gap and the others are unchanged.
+An unknown portfolio is 404.
+
+| Section | Content |
+|---|---|
+| `performance` | value and change since the previous snapshot, `contributors` (up to five positions with the largest value change, with amounts), report `findings` that concern the portfolio (with refs), `events` dated between the two snapshots; no persisted report gives no findings and a gap |
+| `mandate` | `bands`, `position_limit`, `exclusion_breaches`, `breach_reconciliation` (status, note ids, quoted notes, `waiver_claimed`) and `open_actions` linked to the portfolio; a custody account has `applicable: false` and a `statement`; without a mandate reconciliation file a gap says none was persisted |
+| `ownership` | `sector_exposure` (direct and look-through, the same object as the portfolio detail) and the unclassified share of each view |
+| `bank_view` | one `entries[]` item for **every** position: `outlook` is the instrument outlook dated `as_of` or the latest earlier one (`as_of` of the outlook, `older_than_as_of`, `view` with direction, horizon, confidence, reasons, and the stored `market_context`), or `null` with an `outlook_missing` gap. These are the bank's view as of their date, not advice |
+| `events` | events up to `as_of` matching a held instrument (region, sector, asset class, sub-asset class, name or underlying), grouped by event with the `instruments` concerned and what each `matched_on`; ordered by severity, then date |
+| `cash_credit` | `facilities` secured on the portfolio (LTV, trigger, headroom) and `client_liquidity` against planned needs and commitments, marked client level in `client_level_note` |
+| `conversation` | the client's latest `notes` (newest first, up to `note_limit`, out of `note_total`; none after `as_of`; none is not a gap) and open `commitments`, marked client level |
+
 
 ## Instruments, market outlook, events
 
