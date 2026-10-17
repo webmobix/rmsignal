@@ -65,13 +65,14 @@ response is still delivered with `status: "insufficient_data"` and a gap naming 
 ### Urgency
 
 `urgency` spreads a chart axis; it does not reorder the overview, whose rank is the persisted one. It is the importance base
-plus the horizon bonus plus a due-date term of 0 to 4 that fades linearly to zero over 365 days (overdue and same-day take all 4).
+plus the horizon bonus plus a due-date term of 0 to 3 that fades linearly to zero over 365 days (overdue and same-day take all 3)
+plus a rank term of 0 to 9, from 9 for the first action of its importance tier in the persisted overview down to 0 for the last, which separates actions of the same tier and horizon.
 
 | importance | base | | horizon | bonus |
 |---|---|---|---|---|
-| `critical` | 76 | | `immediate` | 18 |
-| `high` | 52 | | `within_30_days` | 13 |
-| `medium` | 28 | | `within_90_days` | 8 |
+| `critical` | 76 | | `immediate` | 10 |
+| `high` | 52 | | `within_30_days` | 7 |
+| `medium` | 28 | | `within_90_days` | 4 |
 | `low` | 4 | | `later`, `none` | 0 |
 
 Tiers are 24 apart and the additions total at most 22, so a higher tier always scores higher.

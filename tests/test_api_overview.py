@@ -31,7 +31,7 @@ def test_due_term_fades_and_overdue_takes_the_full_term():
     far = urgency("high", "later", date(2028, 1, 1), AS_OF)
     overdue = urgency("high", "later", date(2026, 8, 1), AS_OF)
     assert overdue >= near > mid > far == base
-    assert overdue == base + 4.0
+    assert overdue == base + 3.0
 
 
 def test_overview_committed_run(api, reports_dir):
@@ -116,3 +116,10 @@ def test_market_evidence_cites_the_view(api, reports_dir):
     ev_id = views[0]["drivers"][0]["evidence_ids"][0]
     r = api.get(f"/api/evidence/{ev_id}")
     assert r.status_code == 200 and any(c["kind"] == "market_view" for c in r.json()["cited_by"])
+
+
+def test_rank_term_spreads_a_tier_without_crossing_it():
+    first = urgency("high", "immediate", AS_OF, AS_OF, 1.0)
+    last = urgency("high", "immediate", AS_OF, AS_OF, 0.0)
+    assert first > last
+    assert urgency("critical", "none", None, AS_OF, 0.0) > first

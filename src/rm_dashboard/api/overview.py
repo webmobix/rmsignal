@@ -141,11 +141,17 @@ def build_overview(ctx: ReadContext, as_of: date) -> ApiOverview:
             gaps=[gap(f"no overview persisted for {rm_id} at {as_of}; run `rm-dashboard-overview`", rm_id)],
         )
     actions = []
+    seen: dict[str, int] = {}
+    size: dict[str, int] = {}
     for a in base.actions:
+        size[a.importance] = size.get(a.importance, 0) + 1
+    for a in base.actions:
+        pos = seen.get(a.importance, 0)
+        seen[a.importance] = pos + 1
         c = rows.get(a.client_id, {})
         actions.append(ApiAction(
             **a.model_dump(), client_aum_usd=c.get("aum_usd"), wealth_band=c.get("wealth_band"),
-            urgency=urgency(a.importance, a.horizon, a.due_date, as_of), refs=resolve_refs(ctx, as_of, a)))
+            urgency=urgency(a.importance, a.horizon, a.due_date, as_of, 1.0 - pos / max(size[a.importance] - 1, 1)), refs=resolve_refs(ctx, as_of, a)))
     by_client: dict[str, list[ApiAction]] = {}
     for a in actions:
         if a.origin == "client_actions":  # coverage placeholders ("no actions persisted") are not the client's actions
