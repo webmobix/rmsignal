@@ -35,12 +35,11 @@ def test_urgency_table_matches_the_code():
 
 def test_documented_overview_fields_exist(api):
     o = api.get("/api/overview").json()
-    for key in ("client_rows", "total_aum_usd", "meeting_prep", "clients_without_actions", "by_category"):
+    for key in ("client_rows", "total_aum_usd", "clients_without_actions", "by_category"):
         assert key in o and f"`{key}`" in DOC
     a = o["actions"][0]
     for key in ("client_aum_usd", "wealth_band", "urgency", "refs"):
         assert key in a and f"`{key}`" in DOC
-    assert set(o["meeting_prep"]) == {"from_date", "to_date", "clients"}
     e = api.get("/api/evidence/ev_09ac6f68f9808003").json()
     assert {"result", "cited_by"} <= set(e)
 

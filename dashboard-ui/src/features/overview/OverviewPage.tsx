@@ -7,7 +7,6 @@ import { fmtUsd, titleCase } from "#/lib/format";
 import { ActionsPanel } from "./ActionsPanel";
 import { tierCounts } from "./actions";
 import { ClientMatrix } from "./ClientMatrix";
-import { MeetingPrep } from "./MeetingPrep";
 import { SummaryText } from "./SummaryText";
 
 export function OverviewPage() {
@@ -88,7 +87,6 @@ export function OverviewPage() {
 								</h2>
 								<ClientMatrix rows={ov.client_rows} />
 							</section>
-							<MeetingPrep prep={ov.meeting_prep} />
 						</>
 					);
 				}}

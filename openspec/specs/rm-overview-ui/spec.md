@@ -56,10 +56,3 @@ Selecting an action SHALL open a drawer from the right showing what, why, catego
 #### Scenario: Deep link
 - **WHEN** the page is loaded with an action id in the URL
 - **THEN** the drawer opens on that action
-
-### Requirement: Meeting prep
-The overview SHALL show the next 14 days as a panel: actions falling due, KYC reviews due or overdue, and the latest RM note per client, each linking to the client.
-
-#### Scenario: Overdue KYC
-- **WHEN** a client's KYC review is overdue
-- **THEN** the panel shows it marked overdue with a link to the client

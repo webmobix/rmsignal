@@ -456,7 +456,6 @@ export interface components {
              * @default 0
              */
             total_aum_usd: number;
-            meeting_prep: components["schemas"]["MeetingPrep"];
         };
         /** AsOfResponse */
         AsOfResponse: {
@@ -1472,20 +1471,6 @@ export interface components {
             would_change_if: string;
             change: components["schemas"]["Change"];
         };
-        /** LatestNote */
-        LatestNote: {
-            /** Note Id */
-            note_id: string;
-            /**
-             * Note Date
-             * Format: date
-             */
-            note_date: string;
-            /** Channel */
-            channel: string;
-            /** Note */
-            note: string;
-        };
         /** LiquidityItem */
         LiquidityItem: {
             /** Id */
@@ -1711,50 +1696,6 @@ export interface components {
             event_id: string;
             /** Instruments */
             instruments: components["schemas"]["EventInstrument"][];
-        };
-        /** MeetingClient */
-        MeetingClient: {
-            /** Client Id */
-            client_id: string;
-            /** Client Name */
-            client_name: string;
-            /** Items */
-            items: components["schemas"]["MeetingItem"][];
-            latest_note?: components["schemas"]["LatestNote"] | null;
-        };
-        /** MeetingItem */
-        MeetingItem: {
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "action" | "kyc";
-            /** Title */
-            title: string;
-            /** Due Date */
-            due_date?: string | null;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "due" | "overdue" | "immediate";
-            /** Action Id */
-            action_id?: string | null;
-        };
-        /** MeetingPrep */
-        MeetingPrep: {
-            /**
-             * From Date
-             * Format: date
-             */
-            from_date: string;
-            /**
-             * To Date
-             * Format: date
-             */
-            to_date: string;
-            /** Clients */
-            clients: components["schemas"]["MeetingClient"][];
         };
         /** NoteOut */
         NoteOut: {

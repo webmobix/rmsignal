@@ -1,6 +1,5 @@
 from datetime import date
 
-from rm_dashboard.api.overview import meeting_prep
 from rm_dashboard.api.urgency import IMPORTANCE_BASE, urgency
 
 AS_OF = date(2026, 8, 26)
@@ -69,24 +68,6 @@ def test_source_refs_are_resolved(api):
     pf = next(r for r in refs if r["ref"].startswith("CL-0001/PF-0001#"))
     assert pf["client_id"] == "CL-0001" and pf["portfolio_id"] == "PF-0001" and pf["claim"] and pf["evidence_ids"]
     assert all(r["client_id"].startswith("CL-") for r in refs)
-
-
-def test_meeting_prep_lists_near_actions_and_due_kyc(api):
-    mp = api.get("/api/overview").json()["meeting_prep"]
-    assert mp["from_date"] == "2026-08-26" and mp["to_date"] == "2026-09-09"
-    by = {c["client_id"]: c for c in mp["clients"]}
-    assert any(i["kind"] == "action" and i["status"] == "immediate" for i in by["CL-0011"]["items"])
-    kyc = next(i for i in by["CL-0011"]["items"] if i["kind"] == "kyc")
-    assert kyc["status"] == "due" and kyc["due_date"] == "2026-08-31"
-    assert by["CL-0011"]["latest_note"]["note_id"] == "N-015"
-
-
-def test_meeting_prep_marks_overdue_kyc(api):
-    ctx = api.app.state.read
-    mp = meeting_prep(ctx, date(2026, 10, 20), [], {})
-    kyc = {c.client_id: i for c in mp.clients for i in c.items if i.kind == "kyc"}
-    assert kyc["CL-0011"].status == "overdue" and kyc["CL-0008"].status == "overdue"
-    assert all(i.status != "overdue" or i.due_date < date(2026, 10, 20) for i in kyc.values())
 
 
 def test_evidence_with_citations(api, reports_dir):

@@ -27,13 +27,6 @@ Each action SHALL carry a numeric `urgency` derived deterministically from impor
 - **WHEN** two actions share importance `high` but one is due within 90 days and the other has no horizon
 - **THEN** the dated action has the higher urgency
 
-### Requirement: Meeting prep
-The overview response SHALL include a `meeting_prep` block for the 14 days after `as_of`, listing per client the actions due or with an immediate or near horizon, a KYC review falling due or overdue, and the most recent RM note with its date and channel.
-
-#### Scenario: KYC overdue
-- **WHEN** a client's `kyc_review_due` is before `as_of`
-- **THEN** that client appears in `meeting_prep` with a KYC item marked overdue
-
 ### Requirement: Evidence lookup
 `GET /api/evidence/{evidence_id}` SHALL return the stored tool result (tool, arguments, values, as-of, source) and the findings and actions that cite it, with their references.
 

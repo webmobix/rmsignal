@@ -46,11 +46,11 @@ curl localhost:8000/api/rm
 # {"as_of":"2026-08-26","rm_id":"RM-SG-014","rm_name":"Priscilla Ong","rm_desk":"...","booking_centres":["Hong Kong","Singapore"],...}
 ```
 
-## Overview, meeting prep, evidence
+## Overview and evidence
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/overview` | the persisted RM overview plus `client_rows`, `total_aum_usd` and `meeting_prep` |
+| `GET /api/overview` | the persisted RM overview plus `client_rows` and `total_aum_usd` |
 | `GET /api/evidence/{evidence_id}` | the stored tool result and everything that cites it |
 
 `/api/overview` returns the overview of `reports/<as_of>/overview/<rm>.json` unchanged in content (summary, themes, ranked
@@ -82,12 +82,6 @@ plus a rank term of 0 to 9, from 9 for the first action of its importance tier i
 | `low` | 4 | | `later`, `none` | 0 |
 
 Tiers are 24 apart and the additions total at most 22, so a higher tier always scores higher.
-
-### Meeting prep
-
-`meeting_prep` covers the 14 days after `as_of` (`from_date`, `to_date`). A client is listed with its `items` when an action
-has horizon `immediate` or a due date up to the end of the window (overdue ones included), or its KYC review is due by then
-(`status` is `due` or `overdue`), together with its most recent RM note (`note_id`, `note_date`, `channel`, `note`).
 
 ### Evidence
 
