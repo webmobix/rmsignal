@@ -8,7 +8,7 @@ The summary at the top of the overview is useful, but it is one undifferentiated
 
 - The summary marks every client it mentions with the client id; the dashboard renders it as the client's name, in **bold**, linking to the client view.
 - The summary marks the action to take for each client; the dashboard renders it in *italic*.
-- The summary prompt asks for that structure (one short sentence per client: who, then the action), and the guard validates the markup.
+- The summary prompt asks for that structure (only the two or three most pressing clients: who, then the action, within two to four sentences), and the guard validates the markup.
 - A summary with a malformed or unknown client reference is rejected as today (summary removed, gap recorded, overview `partial`).
 - The persisted `summary` stays a string; no API shape change.
 

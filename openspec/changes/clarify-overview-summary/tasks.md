@@ -2,7 +2,7 @@
 
 ## 1. Summary generation and guard
 
-- [x] 1.1 Add `client_id` to the actions in `build_input` and rewrite `RM_OVERVIEW_SUMMARY` to request `[[client_id]]` and `_action_` markup, one sentence per client; verify with a prompt/input test in `tests/test_overview_core.py`
+- [x] 1.1 Add `client_id` to the actions in `build_input` and rewrite `RM_OVERVIEW_SUMMARY` to request `[[client_id]]` and `_action_` markup, covering only the two or three most pressing clients; verify with a prompt/input test in `tests/test_overview_core.py`
 - [x] 1.2 In `guard_summary`, strip client tokens before the numeric check and reject (gap, empty summary) tokens naming clients not in `top`; verify with tests for kept markup and unknown client
 - [x] 1.3 Make the stub plan emit the markup for the first action and update the existing stub-based assertions; verify `uv run pytest tests/test_overview_core.py tests/test_runners.py` passes
 - [x] 1.4 Document the markup in `docs/agents.md` (overview agent section) and verify `tests/test_docs.py` passes
