@@ -376,7 +376,7 @@ def _overview_summary(mode: str, humans: list[str]) -> AIMessage:
     text = humans[-1] if humans else ""
     payload = json.loads(text[text.index(INPUT_MARKER) + len(INPUT_MARKER):])
     actions = payload["actions"]
-    summary = f"First attention: {actions[0]['title']}." if actions else ""
+    summary = f"[[{actions[0]['client_id']}]] _{actions[0]['title']}_." if actions else ""
     by: dict[str, list[str]] = {}
     for a in actions:
         by.setdefault(a["category"], []).append(a["action_id"])

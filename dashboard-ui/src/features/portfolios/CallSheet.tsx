@@ -45,8 +45,8 @@ export function Section({
 			<h2 id={`cs-${id}`} className="mb-3 text-xl">
 				{question}
 			</h2>
-			<GapNotice gaps={gaps} />
 			{children}
+			<GapNotice gaps={gaps} />
 		</section>
 	);
 }

@@ -12,7 +12,7 @@ export function GapNotice({ gaps }: { gaps: readonly Gap[] | undefined }) {
 	if (!gaps?.length) return null;
 	return (
 		<ul
-			className="my-3 border-l-2 border-caution bg-caution-sunk px-3 py-2 text-ink-2"
+			className="mt-8 border-l-2 border-caution px-3 py-1 text-sm text-ink-muted"
 			data-testid="gaps"
 		>
 			{gaps.map((g) => (
@@ -121,8 +121,8 @@ export function StateBoundary<T extends object>({
 			{meta.status === "placeholder" && !hidePlaceholder ? (
 				<PlaceholderBanner note={meta.note} />
 			) : null}
-			{hideGaps ? null : <GapNotice gaps={meta.gaps} />}
 			{isEmpty?.(data) ? <EmptyNotice /> : children(data)}
+			{hideGaps ? null : <GapNotice gaps={meta.gaps} />}
 		</>
 	);
 }

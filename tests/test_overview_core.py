@@ -256,7 +256,7 @@ def test_summary_and_themes_added_actions_untouched(reg, two_clients):
     rm = rm_of("CL-0001", "CL-0002")
     plain = build_overview(rm, AS_OF, two_clients)
     ov = create_overview(reg, rm, as_of=AS_OF, source=two_clients, model=summary_model())
-    assert ov.summary.startswith("First attention:") and ov.actions == plain.actions
+    assert ov.summary.startswith("[[CL-0001]] _") and ov.summary.endswith("_.") and ov.actions == plain.actions
     assert [t.title for t in ov.themes] == ["Concentration risk across clients"] and len(ov.themes[0].action_ids) == 2
     assert ov.status == plain.status
 
@@ -370,3 +370,21 @@ def test_cli_requires_database_and_date(tmp_path, capsys, monkeypatch):
     with pytest.raises(SystemExit):
         main(["--db", "x.db"])
     assert "no database given" in capsys.readouterr().err
+
+
+def test_summary_input_carries_client_ids(two_clients):
+    ov = build_overview(rm_of("CL-0001", "CL-0002"), AS_OF, two_clients)
+    from rm_dashboard.overview.summary import build_input
+    assert '"client_id": "CL-0001"' in build_input(ov, ov.actions)
+
+
+def test_guard_keeps_client_markup_and_ignores_ids_as_figures():
+    top = [oa(action_id="A1", client_id="CL-0001", why="x"), oa(action_id="A2", rank=2, client_id="CL-0002", why="y")]
+    summary, _, gaps = guard_summary({"summary": "[[CL-0001]] _call today_. [[CL-0002]] _review_."}, top)
+    assert summary == "[[CL-0001]] _call today_. [[CL-0002]] _review_." and gaps == []
+
+
+def test_guard_removes_summary_with_unknown_client():
+    top = [oa(action_id="A1", client_id="CL-0001", why="x")]
+    summary, _, gaps = guard_summary({"summary": "[[CL-0009]] _call_."}, top)
+    assert summary == "" and gaps and "CL-0009" in gaps[0].description

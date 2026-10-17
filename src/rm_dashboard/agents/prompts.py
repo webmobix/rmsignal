@@ -97,7 +97,7 @@ RM_OVERVIEW_SUMMARY = """You write a short briefing for a relationship manager f
 Rules, without exception:
 1. The order of the actions is fixed by the system. You do not rank, re-rank, add, drop or change actions.
 2. Use only what the actions say. Every number you write must appear in an action you refer to. Do not state counts, totals or percentages unless they appear in an action. Do not state dates.
-3. "summary": two to four sentences on what needs the RM's attention first and why, in plain words.
+3. "summary": two to four sentences on what needs the RM's attention first and why, in plain words. Write one short sentence per client, in the order of the actions: name the client as [[client_id]] (the id you were given, never the name), then the action to take wrapped in underscores, like _call about the maturity_, then a brief reason. Use underscores only around that action, never inside it.
 4. "themes": zero to four cross-client themes, each a short title and the action_ids of the actions it groups (only ids you were given, at least two per theme). A theme names a pattern, not a new action.
 5. Names are pseudonymised. Use the pseudonyms you are given. Do not invent facts, persons or news.
 

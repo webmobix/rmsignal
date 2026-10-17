@@ -8,6 +8,7 @@ import { ActionsPanel } from "./ActionsPanel";
 import { tierCounts } from "./actions";
 import { ClientMatrix } from "./ClientMatrix";
 import { MeetingPrep } from "./MeetingPrep";
+import { SummaryText } from "./SummaryText";
 
 export function OverviewPage() {
 	const query = useData<Overview>("/overview");
@@ -16,7 +17,16 @@ export function OverviewPage() {
 			<PageHeader
 				eyebrow="Overview"
 				title="Who to call first, and why"
-				lede={query.data?.summary}
+				lede={
+					query.data?.summary ? (
+						<SummaryText
+							text={query.data.summary}
+							names={Object.fromEntries(
+								query.data.client_rows.map((c) => [c.client_id, c.client_name]),
+							)}
+						/>
+					) : undefined
+				}
 			/>
 			<StateBoundary query={query} label="Loading the overview">
 				{(ov) => {

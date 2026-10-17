@@ -228,6 +228,9 @@ uv run rm-dashboard-overview  --as-of 2026-08-26 --db rm.db                     
 - **Briefing (optional):** one model call over the top 20 actions with pseudonymised names. Figures must appear in the
   actions; themes must group at least two existing action ids. A rejected, failed or denied briefing leaves the actions
   and order untouched and marks the overview `partial`; the model cannot add, drop or reorder actions.
+  The summary marks each client as `[[CL-0001]]` (the id, never the name) and the action to take as `_action_`; the
+  dashboard shows the client's name in bold with a link and the action in italic. A marked client that is in none of the
+  actions removes the summary; client ids are not counted as figures.
 
 ## Market outlook
 

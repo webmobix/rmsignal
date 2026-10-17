@@ -23,6 +23,12 @@ There is no CORS and no authentication: the UI reaches the API through a dev pro
 - **Gaps are data.** A section that cannot be produced (missing report, missing outlook, too little
   history) is returned empty with an entry in `gaps` (`kind`, `description`, `subject`). The endpoint does
   not answer 500 and no value is invented.
+  A gap is a note about what the analysis could not do or had to drop, not an error of the dashboard. `kind`
+  is one of `no_data` (the input was absent at `as_of`), `tool_error` (a computation failed or got invalid
+  arguments), `policy_denied` (a policy checkpoint refused the step), `guard_removed` (the output guard removed
+  a model claim, action or theme that lacked evidence, a valid figure or a rationale), `agent_error` (the model
+  step failed or returned unusable output) and `other`. The UI shows them as a quiet "Data gap" list at the
+  end of the page (on the call sheet, at the end of the affected section), after the content they qualify.
 - **Placeholders.** A payload that is not computed by the analysis layer carries `"status": "placeholder"` at
   its top level. A UI must mark it as illustrative.
 - **Point in time.** Figures are read through the point-in-time repository with an explicit `as_of`, so

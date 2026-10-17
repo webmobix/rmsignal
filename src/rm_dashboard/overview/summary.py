@@ -1,6 +1,7 @@
 """The optional model summary of an overview: guarded, and never able to change actions or their order."""
 
 import json
+import re
 from datetime import date
 from typing import Any
 
@@ -24,12 +25,13 @@ from .source import OverviewSource, RmInfo
 ROLE = "rm_overview_summary"
 TOP_N = 20
 MAX_THEMES = 4
+CLIENT_TOKEN = re.compile(r"\[\[([^\[\]]*)\]\]")
 
 
 def build_input(overview: Overview, top: list[OverviewAction]) -> str:
     payload = {
         "rm_id": overview.rm_id, "as_of": overview.as_of.isoformat(),
-        "actions": [{"action_id": a.action_id, "client": a.client_name, "category": a.category, "importance": a.importance,
+        "actions": [{"action_id": a.action_id, "client_id": a.client_id, "client": a.client_name, "category": a.category, "importance": a.importance,
                      "horizon": a.horizon, "title": a.title, "what": a.what, "why": a.why} for a in top],
     }
     return (f"Brief the RM {overview.rm_id} on the next actions as of {overview.as_of.isoformat()}.\n"
@@ -47,8 +49,14 @@ def guard_summary(raw: Any, top: list[OverviewAction]) -> tuple[str, list[Theme]
         return "", [], [Gap(kind="agent_error", description="the model's answer was not an object", subject=ROLE)]
     by_id = {a.action_id: a for a in top}
     summary = raw.get("summary") if isinstance(raw.get("summary"), str) else ""
-    bad = unsupported_numbers(summary, evidence_numbers([t for a in top for t in _text(a)]))
-    if bad:
+    known = {a.client_id for a in top}
+    unknown_clients = sorted({c.strip() for c in CLIENT_TOKEN.findall(summary)} - known)
+    bad = unsupported_numbers(CLIENT_TOKEN.sub(" ", summary), evidence_numbers([t for a in top for t in _text(a)]))
+    if unknown_clients:
+        gaps.append(Gap(kind="guard_removed", subject="summary",
+                        description="summary removed: unknown client(s) " + ", ".join(unknown_clients) + " not in the actions"))
+        summary = ""
+    elif bad:
         gaps.append(Gap(kind="guard_removed", subject="summary",
                         description="summary removed: figure(s) " + ", ".join(f"{b:g}" for b in bad) + " not present in the actions"))
         summary = ""
