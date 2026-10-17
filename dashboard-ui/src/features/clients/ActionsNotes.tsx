@@ -15,7 +15,7 @@ export function ActionsNotes({ detail }: { detail: Detail }) {
 					Actions
 				</h2>
 				{detail.actions.length ? (
-					<ActionTable actions={detail.actions} />
+					<ActionTable actions={detail.actions} hideClient />
 				) : (
 					<EmptyNotice>No actions were derived for this client.</EmptyNotice>
 				)}

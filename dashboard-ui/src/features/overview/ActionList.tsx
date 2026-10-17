@@ -56,17 +56,23 @@ const columns = helper.columns([
 	}),
 ]);
 
+const columnsWithoutClient = columns.filter(
+	(c) => !("accessorKey" in c && c.accessorKey === "client_name"),
+);
+
 export function ActionTable({
 	actions,
 	empty,
+	hideClient = false,
 }: {
 	actions: ApiAction[];
 	empty?: string;
+	hideClient?: boolean;
 }) {
 	const data = useMemo(() => actions, [actions]);
 	return (
 		<DataTable
-			columns={columns}
+			columns={hideClient ? columnsWithoutClient : columns}
 			data={data}
 			initialSort={{ id: "rank", desc: false }}
 			rowId={(a) => a.action_id}
