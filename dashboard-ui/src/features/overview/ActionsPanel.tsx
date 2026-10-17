@@ -27,13 +27,13 @@ export function TierFilter({
 						type="button"
 						aria-pressed={on}
 						onClick={() => onChange(on ? null : tier)}
-						className={`flex items-center gap-2 text-[13px] ${dim ? "opacity-50" : ""} ${on ? "font-semibold text-navy-950 shadow-[inset_0_-1px_0_0_var(--color-navy-950)]" : "text-ink-2"}`}
+						className={`flex items-center gap-2 text-sm ${dim ? "opacity-50" : ""} ${on ? "font-semibold text-navy-950 shadow-[inset_0_-1px_0_0_var(--color-navy-950)]" : "text-ink-2"}`}
 					>
 						<span
 							className="size-2 rounded-full"
 							style={{ background: TIER_COLOR[tier] }}
 						/>
-						<span className="num font-serif text-[22px] leading-none text-navy-950">
+						<span className="num font-serif text-xl leading-none text-navy-950">
 							{counts[tier]}
 						</span>
 						{TIER_LABEL[tier]}
@@ -49,16 +49,16 @@ export function ActionsPanel({ overview }: { overview: Overview }) {
 	const more = overview.actions.length - urgent.length;
 	return (
 		<section aria-labelledby="actions-h" className="mt-10">
-			<h2 id="actions-h" className="text-[26px]">
+			<h2 id="actions-h" className="text-2xl">
 				Needs action now
 			</h2>
-			<p className="mt-1 text-xs text-ink-muted">
+			<p className="mt-1 text-ink-muted">
 				Critical and high importance, immediate horizon.
 			</p>
 			<div className="mt-4" data-testid="risk-actions">
 				<ActionTable actions={urgent} empty="Nothing needs immediate action." />
 			</div>
-			<p className="mt-3 text-[13px]">
+			<p className="mt-3">
 				<Link
 					to="/actions"
 					className="font-medium text-navy-950 hover:text-navy-700"

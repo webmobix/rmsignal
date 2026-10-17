@@ -6,10 +6,10 @@ import { fmtDate, titleCase } from "#/lib/format";
 export function MeetingPrep({ prep }: { prep: Overview["meeting_prep"] }) {
 	return (
 		<section aria-labelledby="prep-h" className="mt-10">
-			<h2 id="prep-h" className="text-[26px]">
+			<h2 id="prep-h" className="text-2xl">
 				Meeting prep
 			</h2>
-			<p className="mt-1 text-xs text-ink-muted">
+			<p className="mt-1 text-ink-muted">
 				{fmtDate(prep.from_date)} to {fmtDate(prep.to_date)}: actions falling
 				due, KYC reviews, and your latest note per client.
 			</p>
@@ -22,10 +22,10 @@ export function MeetingPrep({ prep }: { prep: Overview["meeting_prep"] }) {
 				) : null}
 				{prep.clients.map((c) => (
 					<article key={c.client_id} className="card p-4">
-						<h3 className="text-[17px]">
+						<h3 className="text-lg">
 							<IdLink id={c.client_id}>{c.client_name}</IdLink>
 						</h3>
-						<ul className="mt-2 space-y-1 text-[13px]">
+						<ul className="mt-2 space-y-1">
 							{c.items.map((item) => (
 								<li
 									key={`${item.kind}-${item.action_id ?? item.title}`}
@@ -59,7 +59,7 @@ export function MeetingPrep({ prep }: { prep: Overview["meeting_prep"] }) {
 							))}
 						</ul>
 						{c.latest_note ? (
-							<blockquote className="mt-3 border-l-2 border-rule pl-3 text-xs text-ink-2">
+							<blockquote className="mt-3 border-l-2 border-rule pl-3 text-ink-2">
 								<span className="num text-ink-muted">
 									{fmtDate(c.latest_note.note_date)} · {c.latest_note.channel}
 								</span>

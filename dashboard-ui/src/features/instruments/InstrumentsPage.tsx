@@ -100,7 +100,7 @@ export function InstrumentsPage() {
 			<StateBoundary query={query} label="Loading instruments">
 				{() => (
 					<>
-						<label className="mb-4 flex items-center gap-2 text-[13px]">
+						<label className="mb-4 flex items-center gap-2 text-sm">
 							<input
 								type="checkbox"
 								checked={heldOnly}
@@ -116,7 +116,7 @@ export function InstrumentsPage() {
 							rowId={(r) => r.instrument_id}
 						/>
 						<section className="mt-10" aria-labelledby="ac-h">
-							<h2 id="ac-h" className="mb-3 text-[26px]">
+							<h2 id="ac-h" className="mb-3 text-2xl">
 								USD held by asset class
 							</h2>
 							<BarList

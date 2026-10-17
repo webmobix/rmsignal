@@ -40,7 +40,7 @@ export function EvidenceBlock({
 function EvidenceBody({ id }: { id: string }) {
 	const query = useData<Evidence>(`/evidence/${id}`);
 	return (
-		<div className="border-t border-hair px-3 py-3 text-xs">
+		<div className="border-t border-hair px-3 py-3">
 			<StateBoundary query={query} label="Loading evidence">
 				{(ev) => {
 					const result = ev.result as {
@@ -75,7 +75,7 @@ function EvidenceBody({ id }: { id: string }) {
 										.join(", ")}
 								</p>
 							) : null}
-							<pre className="max-h-72 overflow-auto bg-surface-sunk p-2 text-[11px] leading-snug">
+							<pre className="max-h-72 overflow-auto bg-surface-sunk p-2 text-xs leading-snug">
 								{JSON.stringify(result.data, null, 2)}
 							</pre>
 							{ev.cited_by.length ? (
@@ -109,7 +109,7 @@ function Field({
 	return (
 		<div>
 			<div className="eyebrow mb-1">{label}</div>
-			<div className="text-[14px] text-ink">{children}</div>
+			<div className="text-ink">{children}</div>
 		</div>
 	);
 }
@@ -124,7 +124,7 @@ export function ActionContent({ action }: { action: ApiAction }) {
 	];
 	return (
 		<div className="space-y-5" data-testid="action-drawer">
-			<div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-ink-2">
+			<div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-ink-2">
 				<TierBadge tier={action.importance} />
 				<span>{titleCase(action.category)}</span>
 				<span>Horizon: {titleCase(action.horizon)}</span>
@@ -146,7 +146,7 @@ export function ActionContent({ action }: { action: ApiAction }) {
 					<ul className="space-y-4">
 						{action.refs.map((ref) => (
 							<li key={ref.ref}>
-								<p className="text-[13px]">
+								<p>
 									<IdLink id={ref.ref} />{" "}
 									<span className="text-ink-2">· {ref.claim}</span>
 								</p>
@@ -159,7 +159,7 @@ export function ActionContent({ action }: { action: ApiAction }) {
 						))}
 					</ul>
 				) : (
-					<p className="text-sm text-ink-muted">
+					<p className="text-ink-muted">
 						This action cites no findings (coverage placeholder).
 					</p>
 				)}
@@ -202,9 +202,9 @@ export function EvidenceDrawer() {
 		body = action ? (
 			<ActionContent action={action} />
 		) : overview.isPending ? (
-			<p className="text-sm text-ink-muted">Loading…</p>
+			<p className="text-ink-muted">Loading…</p>
 		) : (
-			<p className="text-sm text-ink-muted">
+			<p className="text-ink-muted">
 				This action is not in the current overview.
 			</p>
 		);
@@ -232,11 +232,11 @@ function FindingContent({ refId }: { refId: string }) {
 			{(detail) => {
 				const finding = detail.findings.find((f) => f.ref === refId);
 				if (!finding)
-					return <p className="text-sm text-ink-muted">Finding not found.</p>;
+					return <p className="text-ink-muted">Finding not found.</p>;
 				return (
 					<div className="space-y-4">
-						<p className="text-[14px]">{finding.claim}</p>
-						<p className="text-xs text-ink-muted">
+						<p>{finding.claim}</p>
+						<p className="text-ink-muted">
 							Confidence {finding.confidence} ·{" "}
 							<IdLink id={finding.client_id} />
 							{finding.portfolio_id ? (

@@ -29,12 +29,12 @@ export function BreachSection({
 					Breaches and notes
 				</h3>
 			) : (
-				<h2 id="breach-h" className="mb-3 text-[22px]">
+				<h2 id="breach-h" className="mb-3 text-xl">
 					Breaches and notes
 				</h2>
 			)}
 			{exclusions.length ? (
-				<ul className="space-y-1 text-[13px]" data-testid="exclusion-breaches">
+				<ul className="space-y-1" data-testid="exclusion-breaches">
 					{exclusions.map((b) => {
 						const label = breachLabel(
 							byKey.get(`exclusion/${b.key}`) ?? {
@@ -62,7 +62,7 @@ export function BreachSection({
 			{noted.length ? (
 				<ul className="mt-4 space-y-4" data-testid="breach-notes">
 					{noted.map((r) => (
-						<li key={`${r.kind}/${r.key}`} className="text-[13px]">
+						<li key={`${r.kind}/${r.key}`}>
 							<div className="font-medium text-alert">
 								{r.description || r.key}
 								<span className="font-normal text-ink-2">
@@ -76,13 +76,13 @@ export function BreachSection({
 									className="mt-1 border-l-2 border-rule pl-3 text-ink-2"
 								>
 									“{n.quote}”
-									<footer className="text-xs text-ink-muted">
+									<footer className="text-ink-muted">
 										RM note {n.note_id}, {fmtDate(n.note_date)}
 									</footer>
 								</blockquote>
 							))}
 							{r.waiver_claimed ? (
-								<p className="mt-1 text-xs text-ink-muted">
+								<p className="mt-1 text-ink-muted">
 									The waiver is the RM's statement and is not verified; it is a
 									claim to verify. The breach stays flagged.
 								</p>

@@ -21,7 +21,7 @@ function Stat({
 		<div>
 			<div className="metric-value num">{value}</div>
 			<div className="mt-2 text-xs text-ink-2">{label}</div>
-			{hint ? <div className="text-[11px] text-ink-muted">{hint}</div> : null}
+			{hint ? <div className="text-xs text-ink-muted">{hint}</div> : null}
 		</div>
 	);
 }
@@ -49,7 +49,7 @@ export function ScenarioResultView({ result }: { result: Result }) {
 					hint={`${result.untouched_count} holdings untouched`}
 				/>
 			</div>
-			<dl className="grid gap-4 text-[13.5px] md:grid-cols-2">
+			<dl className="grid gap-4 md:grid-cols-2">
 				<div>
 					<dt className="eyebrow mb-1">Premise</dt>
 					<dd>{result.premise}</dd>
@@ -64,9 +64,9 @@ export function ScenarioResultView({ result }: { result: Result }) {
 				</div>
 			</dl>
 			<section>
-				<h3 className="mb-2 text-[18px]">Collateral effects</h3>
+				<h3 className="mb-2 text-lg">Collateral effects</h3>
 				{result.collateral.length ? (
-					<ul className="space-y-1 text-[13px]">
+					<ul className="space-y-1">
 						{result.collateral.map((c) => (
 							<li key={c.facility}>
 								{c.facility}: LTV {fmtPct(c.ltv_before_pct)} to{" "}
@@ -85,13 +85,13 @@ export function ScenarioResultView({ result }: { result: Result }) {
 						))}
 					</ul>
 				) : (
-					<p className="text-xs text-ink-muted">No credit facility affected.</p>
+					<p className="text-ink-muted">No credit facility affected.</p>
 				)}
 			</section>
 			<section>
-				<h3 className="mb-2 text-[18px]">Mandate bands crossed</h3>
+				<h3 className="mb-2 text-lg">Mandate bands crossed</h3>
 				{result.bands.length ? (
-					<ul className="space-y-1 text-[13px]">
+					<ul className="space-y-1">
 						{result.bands.map((b) => (
 							<li key={`${b.portfolio}-${b.asset_class}`}>
 								{b.portfolio} · {b.asset_class}: {fmtPct(b.before_pct)} to{" "}
@@ -107,11 +107,11 @@ export function ScenarioResultView({ result }: { result: Result }) {
 						))}
 					</ul>
 				) : (
-					<p className="text-xs text-ink-muted">No band is crossed.</p>
+					<p className="text-ink-muted">No band is crossed.</p>
 				)}
 			</section>
 			<section>
-				<h3 className="mb-2 text-[18px]">Per position</h3>
+				<h3 className="mb-2 text-lg">Per position</h3>
 				<table className="data-table">
 					<thead>
 						<tr>
@@ -131,7 +131,7 @@ export function ScenarioResultView({ result }: { result: Result }) {
 								<td className="num">{fmtPct(p.weight_pct)}</td>
 								<td className="num">{fmtPct(p.move_pct, 1, true)}</td>
 								<td className="num">{fmtUsd(p.delta_usd, false)}</td>
-								<td className="text-xs">
+								<td>
 									{p.channels.map((c) => (
 										<div key={c.channel}>
 											{c.channel} {fmtPct(c.pct, 1, true)}: {c.why}
@@ -174,7 +174,7 @@ export function ScenarioTab({ clientId }: { clientId: string }) {
 										role="tab"
 										aria-selected={s.scenario_id === selected}
 										onClick={() => setPicked(s.scenario_id)}
-										className={`border px-3 py-1.5 text-[13px] ${s.scenario_id === selected ? "border-navy-950 bg-navy-950 text-canvas" : "border-rule bg-surface text-ink-2 hover:border-slate-blue"}`}
+										className={`border px-3 py-1.5 text-sm ${s.scenario_id === selected ? "border-navy-950 bg-navy-950 text-canvas" : "border-rule bg-surface text-ink-2 hover:border-slate-blue"}`}
 									>
 										{s.name}
 									</button>

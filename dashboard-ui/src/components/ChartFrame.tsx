@@ -60,9 +60,7 @@ export function ChartFrame<TDatum = unknown>({
 				)}
 			</div>
 			{caption ? (
-				<figcaption className="mt-2 text-xs text-ink-muted">
-					{caption}
-				</figcaption>
+				<figcaption className="mt-2 text-ink-muted">{caption}</figcaption>
 			) : null}
 		</figure>
 	);

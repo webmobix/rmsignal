@@ -25,7 +25,7 @@ export function Tabs({
 						role="tab"
 						aria-selected={on}
 						onClick={() => onChange(tab.id)}
-						className={`-mb-px border-b-2 pb-2 pt-1 text-[13px] ${
+						className={`-mb-px border-b-2 pb-2 pt-1 text-sm ${
 							on
 								? "border-navy-950 font-semibold text-navy-950"
 								: "border-transparent text-ink-2 hover:text-navy-950"

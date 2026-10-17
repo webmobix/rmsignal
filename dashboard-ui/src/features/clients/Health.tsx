@@ -102,7 +102,7 @@ export function Health({ detail }: { detail: Detail }) {
 	const items = healthItems(detail);
 	return (
 		<section aria-labelledby="health-h" className="mt-10">
-			<h2 id="health-h" className="mb-3 text-[26px]">
+			<h2 id="health-h" className="mb-3 text-2xl">
 				Portfolio health
 			</h2>
 			<ul className="grid gap-3 md:grid-cols-5" data-testid="health">
@@ -118,8 +118,8 @@ export function Health({ detail }: { detail: Detail }) {
 							>
 								{WORD[item.status]}
 							</div>
-							<p className="mt-1 text-xs text-ink-2">{item.figure}</p>
-							<p className="mt-2 text-xs">
+							<p className="mt-1 text-ink-2">{item.figure}</p>
+							<p className="mt-2">
 								{action ? (
 									<OpenActionLink id={action.action_id}>
 										See evidence

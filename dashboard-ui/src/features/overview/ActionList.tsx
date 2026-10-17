@@ -71,9 +71,7 @@ export function ActionTable({
 			initialSort={{ id: "rank", desc: false }}
 			rowId={(a) => a.action_id}
 			empty={
-				<p className="py-6 text-sm text-ink-muted">
-					{empty ?? "No actions match."}
-				</p>
+				<p className="py-6 text-ink-muted">{empty ?? "No actions match."}</p>
 			}
 		/>
 	);

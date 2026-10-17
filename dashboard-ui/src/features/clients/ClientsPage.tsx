@@ -110,7 +110,7 @@ export function ClientsPage() {
 							/>
 						</div>
 						<section className="mt-10" aria-labelledby="aum-h">
-							<h2 id="aum-h" className="mb-3 text-[26px]">
+							<h2 id="aum-h" className="mb-3 text-2xl">
 								AuM by client
 							</h2>
 							<BarList

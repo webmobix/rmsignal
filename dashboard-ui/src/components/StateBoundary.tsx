@@ -12,7 +12,7 @@ export function GapNotice({ gaps }: { gaps: readonly Gap[] | undefined }) {
 	if (!gaps?.length) return null;
 	return (
 		<ul
-			className="my-3 border-l-2 border-caution bg-caution-sunk px-3 py-2 text-xs text-ink-2"
+			className="my-3 border-l-2 border-caution bg-caution-sunk px-3 py-2 text-ink-2"
 			data-testid="gaps"
 		>
 			{gaps.map((g) => (
@@ -31,7 +31,7 @@ export function PlaceholderBanner({ note }: { note?: string | null }) {
 	return (
 		<div
 			role="note"
-			className="my-3 border border-dashed border-slate-blue bg-surface-sunk px-3 py-2 text-xs text-ink-2"
+			className="my-3 border border-dashed border-slate-blue bg-surface-sunk px-3 py-2 text-ink-2"
 			data-testid="placeholder-banner"
 		>
 			<b className="font-semibold text-navy-950">Illustrative, not computed.</b>{" "}
@@ -45,7 +45,7 @@ export function PlaceholderBanner({ note }: { note?: string | null }) {
 
 export function EmptyNotice({ children }: { children?: ReactNode }) {
 	return (
-		<p className="border border-dashed border-rule px-4 py-6 text-center text-sm text-ink-muted">
+		<p className="border border-dashed border-rule px-4 py-6 text-center text-ink-muted">
 			{children ?? "Nothing to show."}
 		</p>
 	);
@@ -53,7 +53,7 @@ export function EmptyNotice({ children }: { children?: ReactNode }) {
 
 export function LoadingBlock({ label = "Loading" }: { label?: string }) {
 	return (
-		<output className="block animate-pulse border border-hair bg-surface px-4 py-8 text-center text-xs text-ink-muted">
+		<output className="block animate-pulse border border-hair bg-surface px-4 py-8 text-center text-ink-muted">
 			{label}…
 		</output>
 	);
@@ -71,17 +71,13 @@ export function ErrorBlock({
 	return (
 		<div
 			role="alert"
-			className="border border-alert bg-alert-sunk px-4 py-3 text-sm text-alert"
+			className="border border-alert bg-alert-sunk px-4 py-3 text-alert"
 		>
 			<p>
 				<b>Could not load this section.</b> {message}
 			</p>
 			{onRetry ? (
-				<button
-					type="button"
-					onClick={onRetry}
-					className="mt-2 text-xs underline"
-				>
+				<button type="button" onClick={onRetry} className="mt-2 underline">
 					Retry
 				</button>
 			) : null}

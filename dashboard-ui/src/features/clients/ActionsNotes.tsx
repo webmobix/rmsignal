@@ -11,7 +11,7 @@ export function ActionsNotes({ detail }: { detail: Detail }) {
 	return (
 		<div className="space-y-10" data-testid="actions-notes">
 			<section aria-labelledby="ca-h" className="mt-8">
-				<h2 id="ca-h" className="mb-3 text-[22px]">
+				<h2 id="ca-h" className="mb-3 text-xl">
 					Actions
 				</h2>
 				{detail.actions.length ? (
@@ -21,10 +21,10 @@ export function ActionsNotes({ detail }: { detail: Detail }) {
 				)}
 			</section>
 			<section aria-labelledby="notes-h">
-				<h2 id="notes-h" className="mb-1 text-[22px]">
+				<h2 id="notes-h" className="mb-1 text-xl">
 					RM notes against the data
 				</h2>
-				<p className="mb-3 text-xs text-ink-muted">
+				<p className="mb-3 text-ink-muted">
 					Each note is checked against the holdings and reports.
 				</p>
 				{detail.notes.length ? (
@@ -47,10 +47,10 @@ export function ActionsNotes({ detail }: { detail: Detail }) {
 											{VERDICT_LABEL[n.verdict ?? ""] ?? n.verdict}
 										</span>
 									</div>
-									<p className="mt-2 text-[14px]">{n.note}</p>
-									<p className="mt-2 text-xs text-ink-2">{n.rationale}</p>
+									<p className="mt-2">{n.note}</p>
+									<p className="mt-2 text-ink-2">{n.rationale}</p>
 									{n.evidence_ids.length || n.finding_refs.length ? (
-										<p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+										<p className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
 											<span className="eyebrow">Evidence</span>
 											{n.finding_refs.map((r) => (
 												<IdLink key={r} id={r} />

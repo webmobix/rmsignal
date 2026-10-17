@@ -112,12 +112,12 @@ export function InstrumentPage() {
 							]}
 						/>
 						{i.underlying_reference ? (
-							<p className="mt-4 text-[13px] text-ink-2">
+							<p className="mt-4 text-ink-2">
 								Underlying reference: <b>{i.underlying_reference}</b>
 							</p>
 						) : null}
 						<section className="mt-10" aria-labelledby="price-h">
-							<h2 id="price-h" className="mb-3 text-[22px]">
+							<h2 id="price-h" className="mb-3 text-xl">
 								Price path
 							</h2>
 							<LineTrend
@@ -130,7 +130,7 @@ export function InstrumentPage() {
 							/>
 						</section>
 						<section className="mt-10" aria-labelledby="holders-h">
-							<h2 id="holders-h" className="mb-3 text-[22px]">
+							<h2 id="holders-h" className="mb-3 text-xl">
 								Holders
 							</h2>
 							{i.holders.length ? (
@@ -154,19 +154,17 @@ export function InstrumentPage() {
 							)}
 						</section>
 						<section className="mt-10" aria-labelledby="outlook-h">
-							<h2 id="outlook-h" className="mb-3 text-[22px]">
+							<h2 id="outlook-h" className="mb-3 text-xl">
 								Outlook
 							</h2>
 							{i.outlook ? (
 								<div className="space-y-4">
-									<p className="max-w-[900px] text-[14px]">
-										{i.outlook.summary}
-									</p>
+									<p className="max-w-[900px]">{i.outlook.summary}</p>
 									{i.outlook.view ? (
 										<ViewCard title="Instrument view" view={i.outlook.view} />
 									) : null}
 									{i.outlook.market_context.length ? (
-										<p className="text-xs text-ink-2">
+										<p className="text-ink-2">
 											Market context:{" "}
 											{i.outlook.market_context
 												.map(
@@ -177,7 +175,7 @@ export function InstrumentPage() {
 										</p>
 									) : null}
 									{i.outlook.relevant_events.length ? (
-										<ul className="space-y-1 text-[13px]">
+										<ul className="space-y-1">
 											{i.outlook.relevant_events.map((e) => (
 												<li key={e.event_id}>
 													<span className="num text-ink-muted">
@@ -189,7 +187,7 @@ export function InstrumentPage() {
 										</ul>
 									) : null}
 									{i.outlook.evidence_ids.length ? (
-										<p className="flex flex-wrap gap-x-3 text-xs">
+										<p className="flex flex-wrap gap-x-3">
 											<span className="eyebrow">Evidence</span>
 											{i.outlook.evidence_ids.map((e) => (
 												<IdLink key={e} id={e} />

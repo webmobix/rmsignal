@@ -36,7 +36,7 @@ export function MetricStrip({
 						)}
 					</div>
 					{m.hint ? (
-						<div className="text-[11px] text-ink-muted">{m.hint}</div>
+						<div className="text-xs text-ink-muted">{m.hint}</div>
 					) : null}
 				</div>
 			))}

@@ -19,12 +19,12 @@ function Select({
 	onChange: (v: string) => void;
 }) {
 	return (
-		<label className="flex items-center gap-2 text-[13px]">
+		<label className="flex items-center gap-2 text-sm">
 			<span className="eyebrow">{label}</span>
 			<select
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				className="border border-rule bg-surface px-2 py-1 text-[13px]"
+				className="border border-rule bg-surface px-2 py-1 text-sm"
 			>
 				{options.map((o) => (
 					<option key={o} value={o}>
@@ -60,17 +60,17 @@ export function SnapshotCompare({
 			<StateBoundary query={query} label="Comparing snapshots">
 				{(d) => (
 					<div className="mt-6 space-y-8">
-						<p className="text-[14px]">
+						<p>
 							Total <b className="num">{fmtUsd(d.total_from_usd)}</b> to{" "}
 							<b className="num">{fmtUsd(d.total_to_usd)}</b> (
 							{fmtPct(d.change_pct, 1, true)}, {fmtUsd(d.change_usd)}).
 						</p>
 						{d.portfolios.map((p) => (
 							<section key={p.portfolio_id}>
-								<h3 className="text-[18px]">
+								<h3 className="text-lg">
 									<IdLink id={p.portfolio_id}>{p.portfolio_name}</IdLink>
 								</h3>
-								<p className="mt-1 text-[13px] text-ink-2">
+								<p className="mt-1 text-ink-2">
 									AuM {fmtUsd(p.aum_usd_from)} to {fmtUsd(p.aum_usd_to)} (
 									{fmtPct(p.change_pct, 1, true)}). Unrealised P&amp;L change{" "}
 									<span className="num">
@@ -114,16 +114,16 @@ export function SnapshotCompare({
 										</tbody>
 									</table>
 								) : (
-									<p className="mt-2 text-xs text-ink-muted">
+									<p className="mt-2 text-ink-muted">
 										No positions added, removed or resized.
 									</p>
 								)}
 							</section>
 						))}
 						<section>
-							<h3 className="mb-2 text-[18px]">Events between the dates</h3>
+							<h3 className="mb-2 text-lg">Events between the dates</h3>
 							{d.events.length ? (
-								<ul className="space-y-2 text-[13px]">
+								<ul className="space-y-2">
 									{d.events.map((e) => (
 										<li key={`${e.event_date}-${e.description.slice(0, 20)}`}>
 											<span className="num text-ink-muted">
@@ -134,9 +134,7 @@ export function SnapshotCompare({
 									))}
 								</ul>
 							) : (
-								<p className="text-xs text-ink-muted">
-									No events between these dates.
-								</p>
+								<p className="text-ink-muted">No events between these dates.</p>
 							)}
 						</section>
 					</div>

@@ -15,7 +15,7 @@ const SEVERITY_TONE: Record<string, string> = {
 
 function Tag({ children }: { children: React.ReactNode }) {
 	return (
-		<span className="ml-2 border border-rule px-1.5 py-px text-[11px] font-medium text-ink-muted">
+		<span className="ml-2 border border-rule px-1.5 py-px text-xs font-medium text-ink-muted">
 			{children}
 		</span>
 	);
@@ -23,11 +23,9 @@ function Tag({ children }: { children: React.ReactNode }) {
 
 export function PerformanceCard({ s }: { s: S["performance"] }) {
 	return (
-		<div className="min-w-0 text-[13px]">
+		<div className="min-w-0">
 			<p>
-				<span className="num text-[20px] font-semibold">
-					{fmtUsd(s.aum_usd)}
-				</span>{" "}
+				<span className="num text-xl font-semibold">{fmtUsd(s.aum_usd)}</span>{" "}
 				<span className="num">
 					{fmtPct(s.change_pct, 1, true)} ({fmtUsd(s.change_usd)})
 				</span>{" "}
@@ -97,7 +95,7 @@ export function MandateCard({ s }: { s: S["mandate"] }) {
 	if (!s.applicable)
 		return <EmptyNotice>{s.statement || "No mandate applies."}</EmptyNotice>;
 	return (
-		<div className="min-w-0 text-[13px]">
+		<div className="min-w-0">
 			<p className="text-ink-2">{s.statement}</p>
 			{s.bands.some((b) => b.out_of_band) ? (
 				<ul
@@ -121,7 +119,7 @@ export function MandateCard({ s }: { s: S["mandate"] }) {
 				</p>
 			)}
 			{s.position_limit.max_single_position_pct != null ? (
-				<p className="mt-2 text-xs text-ink-2">
+				<p className="mt-2 text-ink-2">
 					Largest position{" "}
 					<IdLink id={s.position_limit.largest_instrument_id ?? ""} /> at{" "}
 					{fmtPct(s.position_limit.largest_weight_pct)} against a
@@ -203,14 +201,14 @@ export function BankViewRow({
 					{o.older_than_as_of ? <Tag>older than {fmtDate(asOf)}</Tag> : null}
 					{o.view.rationale ? <p className="mt-1">{o.view.rationale}</p> : null}
 					{o.view.drivers.length ? (
-						<ul className="mt-1 list-disc pl-5 text-xs">
+						<ul className="mt-1 list-disc pl-5">
 							{o.view.drivers.map((d) => (
 								<li key={d.claim}>{d.claim}</li>
 							))}
 						</ul>
 					) : null}
 					{o.market_context.length ? (
-						<p className="mt-1 text-xs text-ink-muted">
+						<p className="mt-1 text-ink-muted">
 							Market view as of {fmtDate(o.market_outlook_as_of)}:{" "}
 							{o.market_context
 								.map((m) => `${m.segment} ${m.direction}`)
@@ -228,8 +226,8 @@ export function BankViewRow({
 export function BankViewCard({ s, asOf }: { s: S["bank_view"]; asOf: string }) {
 	if (!s.entries.length) return <EmptyNotice>No positions.</EmptyNotice>;
 	return (
-		<div className="min-w-0 text-[13px]">
-			<p className="mb-2 text-xs text-ink-muted">
+		<div className="min-w-0">
+			<p className="mb-2 text-ink-muted">
 				The bank's own views, each as of its date. They are not advice.
 			</p>
 			<ul data-testid="bank-view">
@@ -245,7 +243,7 @@ export function EventsCard({ s }: { s: S["events"] }) {
 	if (!s.events.length)
 		return <EmptyNotice>No event matches the holdings.</EmptyNotice>;
 	return (
-		<ul className="min-w-0 space-y-3 text-[13px]" data-testid="cs-event-list">
+		<ul className="min-w-0 space-y-3" data-testid="cs-event-list">
 			{s.events.map((e) => (
 				<li key={e.event_id}>
 					<span className="num text-ink-muted">{fmtDate(e.event_date)}</span>{" "}
@@ -253,7 +251,7 @@ export function EventsCard({ s }: { s: S["events"] }) {
 					<Link to="/market" className="font-medium text-navy-700">
 						{e.description}
 					</Link>
-					<div className="text-xs text-ink-muted">
+					<div className="text-ink-muted">
 						Concerns:{" "}
 						{e.instruments.map((i, n) => (
 							<span key={i.instrument_id}>
@@ -272,7 +270,7 @@ export function EventsCard({ s }: { s: S["events"] }) {
 export function CashCard({ s }: { s: S["cash_credit"] }) {
 	const liq = s.client_liquidity;
 	return (
-		<div className="min-w-0 text-[13px]">
+		<div className="min-w-0">
 			{s.facilities.length ? (
 				<ul className="space-y-1" data-testid="cs-facilities">
 					{s.facilities.map((f) => (
@@ -335,7 +333,7 @@ export function ConversationCard({
 	clientId: string;
 }) {
 	return (
-		<div className="min-w-0 text-[13px]">
+		<div className="min-w-0">
 			<h3 className="text-xs font-semibold uppercase text-ink-muted">
 				Latest notes <Tag>client level</Tag>
 			</h3>
@@ -363,7 +361,7 @@ export function ConversationCard({
 				<p className="text-ink-muted">No notes up to this date.</p>
 			)}
 			{s.note_total > s.notes.length ? (
-				<p className="mt-1 text-xs text-ink-muted">
+				<p className="mt-1 text-ink-muted">
 					Showing the latest {s.notes.length} of {s.note_total} notes.
 				</p>
 			) : null}

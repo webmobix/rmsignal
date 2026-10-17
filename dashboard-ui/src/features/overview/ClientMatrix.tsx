@@ -44,7 +44,7 @@ export function ClientMatrix({ rows }: { rows: Row[] }) {
 						text: "text",
 						anchor: "end",
 						dy: -7,
-						fontSize: 10,
+						fontSize: 12,
 						fill: "var(--color-ink-muted)",
 					}),
 					dot(points, {
@@ -61,7 +61,7 @@ export function ClientMatrix({ rows }: { rows: Row[] }) {
 							y: "urgency",
 							text: "label",
 							dy: -13,
-							fontSize: 10,
+							fontSize: 12,
 						},
 					),
 				],

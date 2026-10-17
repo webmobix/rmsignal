@@ -45,7 +45,7 @@ export function ActionsView({
 	return (
 		<>
 			<div className="flex flex-wrap items-end justify-between gap-4">
-				<h2 className="text-[26px]">All actions</h2>
+				<h2 className="text-2xl">All actions</h2>
 				<TierFilter
 					counts={tierCounts(overview.actions)}
 					value={tier}
@@ -99,13 +99,13 @@ export function ActionsView({
 				data-testid="dq-lane"
 				aria-labelledby="dq-h"
 			>
-				<h2 id="dq-h" className="text-[22px]">
+				<h2 id="dq-h" className="text-xl">
 					Data quality and coverage{" "}
 					<span className="num text-base font-normal text-ink-muted">
 						({dataQuality.length})
 					</span>
 				</h2>
-				<p className="mt-2 max-w-[760px] text-xs text-ink-muted">
+				<p className="mt-2 max-w-[760px] text-ink-muted">
 					Gaps in the analysis, such as clients whose report produced no
 					actions. Kept apart so they do not crowd out client risks.
 				</p>

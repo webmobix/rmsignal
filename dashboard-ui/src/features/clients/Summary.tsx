@@ -97,7 +97,7 @@ function Section({
 }) {
 	return (
 		<section aria-labelledby={id} className="mt-10">
-			<h2 id={id} className="mb-3 text-[22px]">
+			<h2 id={id} className="mb-3 text-xl">
 				{title}
 			</h2>
 			{children}
@@ -169,7 +169,7 @@ export function ClientSummary({
 								eventDates={eventDates}
 								ariaLabel="Assets under management by portfolio over time"
 							/>
-							<p className="mt-2 text-xs text-ink-muted">
+							<p className="mt-2 text-ink-muted">
 								Dashed lines mark events in the period:{" "}
 								{history.data?.events
 									.map((e) => `${fmtDate(e.event_date)} ${e.event_type}`)
@@ -228,7 +228,7 @@ export function ClientSummary({
 			</Section>
 			<Section title="Liquidity against planned needs" id="liq-h">
 				{liq ? (
-					<div className="space-y-3 text-[13px]" data-testid="liquidity">
+					<div className="space-y-3" data-testid="liquidity">
 						<p>
 							Next {liq.horizon_days} days (to {fmtDate(liq.horizon_end)}):
 							daily-liquid assets{" "}
@@ -247,7 +247,7 @@ export function ClientSummary({
 							)}
 						</p>
 						{liq.items.length ? (
-							<ul className="space-y-1 text-xs text-ink-2">
+							<ul className="space-y-1 text-ink-2">
 								{liq.items.map((i) => (
 									<li key={i.id}>
 										<span className="eyebrow mr-2">{titleCase(i.kind)}</span>
@@ -265,7 +265,7 @@ export function ClientSummary({
 			</Section>
 			<Section title="Credit headroom" id="credit-h">
 				{c.facilities?.length ? (
-					<ul className="space-y-2 text-[13px]" data-testid="credit">
+					<ul className="space-y-2" data-testid="credit">
 						{c.facilities.map((f) => (
 							<li key={f.facility_id} className="card p-3">
 								<b>{f.facility_type}</b>{" "}

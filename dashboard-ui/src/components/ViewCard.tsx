@@ -27,7 +27,7 @@ function Reasons({ title, items }: { title: string; items: Reason[] }) {
 	return (
 		<div className="mt-3">
 			<div className="eyebrow mb-1">{title}</div>
-			<ul className="space-y-2 text-[13px]">
+			<ul className="space-y-2">
 				{items.map((r) => (
 					<li key={r.claim}>
 						{r.claim}
@@ -64,19 +64,19 @@ export function ViewCard({
 	return (
 		<article className="card p-4" data-testid="view-card">
 			<div className="flex flex-wrap items-baseline justify-between gap-2">
-				<h3 className="text-[18px]">{title}</h3>
+				<h3 className="text-lg">{title}</h3>
 				<span className={`text-xs font-semibold ${d?.tone}`}>
 					<span aria-hidden="true">{d?.glyph}</span> {d?.word} · {view.horizon}{" "}
 					· {view.confidence} confidence
 				</span>
 			</div>
-			<p className="mt-2 text-[13.5px]">{view.rationale}</p>
+			<p className="mt-2">{view.rationale}</p>
 			<Reasons title="Drivers" items={view.drivers} />
 			<Reasons title="Risks" items={view.risks} />
-			<p className="mt-3 text-xs text-ink-2">
+			<p className="mt-3 text-ink-2">
 				<b>Would change if:</b> {view.would_change_if}
 			</p>
-			<p className="mt-2 text-xs text-ink-muted">
+			<p className="mt-2 text-ink-muted">
 				{titleCase(view.change.kind)}
 				{view.change.previous_direction
 					? ` (was ${view.change.previous_direction})`

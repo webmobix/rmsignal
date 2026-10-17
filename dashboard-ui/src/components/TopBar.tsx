@@ -17,13 +17,13 @@ export function TopBar() {
 			<div className="mx-auto flex max-w-page flex-wrap items-center gap-x-6 gap-y-2 px-gutter py-3">
 				<Link
 					to="/"
-					className="flex items-center gap-3 font-serif text-[17px] text-navy-950 no-underline"
+					className="flex items-center gap-3 font-serif text-lg text-navy-950 no-underline"
 				>
 					<span className="font-semibold tracking-tight">Global WM Bank</span>
 					<span aria-hidden="true" className="h-5 w-px bg-rule" />
 					<span>RMSignal</span>
 				</Link>
-				<nav aria-label="Primary" className="flex gap-5 text-[13px]">
+				<nav aria-label="Primary" className="flex gap-5 text-sm">
 					{NAV.map((item) => (
 						<Link
 							key={item.to}
@@ -40,7 +40,7 @@ export function TopBar() {
 					))}
 				</nav>
 				<div
-					className="ml-auto flex items-center gap-3 text-[12.5px]"
+					className="ml-auto flex items-center gap-3 text-sm"
 					data-testid="rm-identity"
 				>
 					{rm.data ? (

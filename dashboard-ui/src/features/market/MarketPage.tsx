@@ -39,11 +39,11 @@ export function EventItem({ event }: { event: EventRow }) {
 					{event.event_type} · {event.region}
 				</span>
 			</div>
-			<p className="mt-1 text-[14px]">{event.description}</p>
-			<p className="mt-1 text-xs text-ink-2">
+			<p className="mt-1">{event.description}</p>
+			<p className="mt-1 text-ink-2">
 				<b>Channels:</b> {event.primary_transmission}
 			</p>
-			<details className="mt-2 text-xs">
+			<details className="mt-2">
 				<summary className="cursor-pointer font-semibold text-navy-700">
 					Reaches {r.clients.length} client{r.clients.length === 1 ? "" : "s"}{" "}
 					and {r.instruments.length} instrument
@@ -104,17 +104,15 @@ export function MarketPage() {
 				{({ outlook: o }) =>
 					o ? (
 						<div data-testid="market-outlook">
-							<p className="max-w-[900px] text-[16px] text-ink-2">
-								{o.summary}
-							</p>
-							<p className="mt-2 text-xs text-ink-muted">
+							<p className="max-w-[900px] text-ink-2">{o.summary}</p>
+							<p className="mt-2 text-ink-muted">
 								Status {titleCase(o.status)} · as of {fmtDate(o.as_of)}
 								{o.previous_as_of
 									? ` · previous outlook ${fmtDate(o.previous_as_of)}`
 									: " · first outlook"}
 							</p>
 							<section className="mt-8" aria-labelledby="views-h">
-								<h2 id="views-h" className="mb-3 text-[26px]">
+								<h2 id="views-h" className="mb-3 text-2xl">
 									Views
 								</h2>
 								<div className="grid gap-4 lg:grid-cols-2">
@@ -128,17 +126,17 @@ export function MarketPage() {
 								</div>
 							</section>
 							<section className="mt-10" aria-labelledby="chg-h">
-								<h2 id="chg-h" className="mb-2 text-[22px]">
+								<h2 id="chg-h" className="mb-2 text-xl">
 									What changed
 								</h2>
-								<p className="max-w-[900px] text-[14px]">{o.changes_summary}</p>
+								<p className="max-w-[900px]">{o.changes_summary}</p>
 							</section>
 							<section className="mt-10" aria-labelledby="un-h">
-								<h2 id="un-h" className="mb-2 text-[22px]">
+								<h2 id="un-h" className="mb-2 text-xl">
 									Events not yet addressed
 								</h2>
 								{o.unaddressed_events.length ? (
-									<ul className="space-y-1 text-[13px]">
+									<ul className="space-y-1">
 										{o.unaddressed_events.map((e) => (
 											<li key={e.event_id}>
 												<span className="num text-ink-muted">
@@ -149,13 +147,13 @@ export function MarketPage() {
 										))}
 									</ul>
 								) : (
-									<p className="text-xs text-ink-muted">
+									<p className="text-ink-muted">
 										All events are addressed by the views.
 									</p>
 								)}
 							</section>
 							{o.evidence_ids.length ? (
-								<p className="mt-6 flex flex-wrap gap-x-3 text-xs">
+								<p className="mt-6 flex flex-wrap gap-x-3">
 									<span className="eyebrow">Evidence</span>
 									{o.evidence_ids.map((e) => (
 										<IdLink key={e} id={e} />
@@ -171,7 +169,7 @@ export function MarketPage() {
 				}
 			</StateBoundary>
 			<section className="mt-12" aria-labelledby="tl-h">
-				<h2 id="tl-h" className="mb-4 text-[26px]">
+				<h2 id="tl-h" className="mb-4 text-2xl">
 					Event timeline
 				</h2>
 				<StateBoundary query={events} label="Loading events">

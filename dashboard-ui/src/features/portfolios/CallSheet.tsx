@@ -42,7 +42,7 @@ export function Section({
 			aria-labelledby={`cs-${id}`}
 			data-testid={`cs-${id}`}
 		>
-			<h2 id={`cs-${id}`} className="mb-3 text-[22px]">
+			<h2 id={`cs-${id}`} className="mb-3 text-xl">
 				{question}
 			</h2>
 			<GapNotice gaps={gaps} />
@@ -65,7 +65,7 @@ export function CallSheetBody({ sheet }: { sheet: CallSheetData }) {
 	};
 	return (
 		<div data-testid="call-sheet" className="min-w-0 break-words">
-			<p className="mt-5 text-xs text-ink-muted">
+			<p className="mt-5 text-ink-muted">
 				Call sheet as of{" "}
 				<span className="num font-medium text-ink-2">
 					{fmtDate(sheet.as_of)}

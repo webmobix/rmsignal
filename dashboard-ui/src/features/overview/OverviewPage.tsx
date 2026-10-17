@@ -73,7 +73,7 @@ export function OverviewPage() {
 							) : null}
 							<ActionsPanel overview={ov} />
 							<section aria-labelledby="matrix-h" className="mt-10">
-								<h2 id="matrix-h" className="mb-3 text-[26px]">
+								<h2 id="matrix-h" className="mb-3 text-2xl">
 									Client matrix
 								</h2>
 								<ClientMatrix rows={ov.client_rows} />

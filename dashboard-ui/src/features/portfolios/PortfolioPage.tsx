@@ -146,7 +146,7 @@ export function PortfolioPage() {
 									]}
 								/>
 								<section className="mt-10" aria-labelledby="pf-hist">
-									<h2 id="pf-hist" className="mb-3 text-[22px]">
+									<h2 id="pf-hist" className="mb-3 text-xl">
 										AuM history
 									</h2>
 									<LineTrend
@@ -160,7 +160,7 @@ export function PortfolioPage() {
 									/>
 								</section>
 								<section className="mt-10" aria-labelledby="bands-h">
-									<h2 id="bands-h" className="mb-3 text-[22px]">
+									<h2 id="bands-h" className="mb-3 text-xl">
 										Mandate bands
 									</h2>
 									{p.bands.length ? (
@@ -168,7 +168,7 @@ export function PortfolioPage() {
 											<BandsChart bands={p.bands} />
 											{statements.length ? (
 												<ul
-													className="mt-3 space-y-1 text-[13px] font-medium text-alert"
+													className="mt-3 space-y-1 font-medium text-alert"
 													data-testid="band-breaches"
 												>
 													{statements.map((s) => (
@@ -176,7 +176,7 @@ export function PortfolioPage() {
 													))}
 												</ul>
 											) : (
-												<p className="mt-3 text-[13px] text-positive">
+												<p className="mt-3 text-positive">
 													All asset classes are within their bands.
 												</p>
 											)}
@@ -189,7 +189,7 @@ export function PortfolioPage() {
 									)}
 									{p.position_limit &&
 									p.position_limit.max_single_position_pct != null ? (
-										<p className="mt-3 text-xs text-ink-2">
+										<p className="mt-3 text-ink-2">
 											Largest position{" "}
 											<IdLink
 												id={p.position_limit.largest_instrument_id ?? ""}
@@ -214,13 +214,13 @@ export function PortfolioPage() {
 									reconciliation={p.breach_reconciliation}
 								/>
 								<section className="mt-10" aria-labelledby="sector-h">
-									<h2 id="sector-h" className="mb-3 text-[22px]">
+									<h2 id="sector-h" className="mb-3 text-xl">
 										Sector exposure
 									</h2>
 									<SectorSection exposure={p.sector_exposure} />
 								</section>
 								<section className="mt-10" aria-labelledby="hold-h">
-									<h2 id="hold-h" className="mb-3 text-[22px]">
+									<h2 id="hold-h" className="mb-3 text-xl">
 										Holdings
 									</h2>
 									<DataTable
@@ -236,10 +236,7 @@ export function PortfolioPage() {
 										className="mt-10"
 										aria-labelledby={`ltv-${f.facility_id}`}
 									>
-										<h2
-											id={`ltv-${f.facility_id}`}
-											className="mb-3 text-[22px]"
-										>
+										<h2 id={`ltv-${f.facility_id}`} className="mb-3 text-xl">
 											Loan-to-value · {f.facility_type}
 										</h2>
 										<LineTrend

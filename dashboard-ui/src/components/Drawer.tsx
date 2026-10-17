@@ -45,7 +45,7 @@ export function Drawer({
 				<div className="flex items-start justify-between gap-4">
 					<div>
 						{eyebrow ? <div className="eyebrow mb-2">{eyebrow}</div> : null}
-						<h2 className="text-[22px] leading-tight">{title}</h2>
+						<h2 className="text-xl leading-tight">{title}</h2>
 					</div>
 					<button
 						type="button"

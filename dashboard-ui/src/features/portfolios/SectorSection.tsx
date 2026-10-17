@@ -56,10 +56,7 @@ export function SectorSection({ exposure }: { exposure: Exposure }) {
 					ariaLabel={`Portfolio exposure by sector, ${view === "direct" ? "direct" : "looked through structured products"}`}
 				/>
 			</div>
-			<ul
-				className="mt-3 space-y-1 text-xs text-ink-2"
-				data-testid="sector-notes"
-			>
+			<ul className="mt-3 space-y-1 text-ink-2" data-testid="sector-notes">
 				<li>
 					{view === "direct"
 						? "Each position counts under its instrument's sector."

@@ -52,9 +52,7 @@ export function DataTable<T extends RowData>({
 		onSortChange?.(rows.map((r) => r.original));
 	}, [orderKey]);
 	if (!rows.length)
-		return (
-			<>{empty ?? <p className="py-6 text-sm text-ink-muted">No rows.</p>}</>
-		);
+		return <>{empty ?? <p className="py-6 text-ink-muted">No rows.</p>}</>;
 	return (
 		<div className="overflow-x-auto">
 			<table className="data-table">

@@ -62,7 +62,7 @@ export function LineTrend({
 					text: "text",
 					dy: -8,
 					anchor: "end",
-					fontSize: 10,
+					fontSize: 12,
 					fill: "var(--color-alert)",
 				}),
 			],

@@ -93,7 +93,7 @@ const columns = helper.columns([
 export function PortfolioList({ portfolios }: { portfolios: Row[] }) {
 	return (
 		<section aria-labelledby="pf-h" className="mt-10">
-			<h2 id="pf-h" className="mb-3 text-[26px]">
+			<h2 id="pf-h" className="mb-3 text-2xl">
 				Portfolios
 			</h2>
 			<div data-testid="portfolio-list">
