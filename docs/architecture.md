@@ -25,6 +25,8 @@ Not every "agent" is the same kind of thing. Four setups exist, and the section 
 | RM Overview | Deterministic build; one optional summary call | summary only | `rm-dashboard-overview` | `overview/<rm_id>.json` |
 | Market Outlook analyst | Deep Agents graph with tool loop; carry-forward without a call | yes | `rm-dashboard-outlook` | `outlook/market.json` |
 | Instrument Outlook analyst | Same agent as above with another prompt and tool set | yes | `rm-dashboard-outlook` | `outlook/instruments/<id>.json` |
+| Scenario analyst | Deep Agents graph with tool loop; code guards every move | yes | `rm-dashboard-scenarios` | `scenarios/<id>/vector.json` |
+| Scenario impact | Computed by code; the same agent setup places unmapped holdings and writes the summaries | yes (prose and placement only) | `rm-dashboard-scenarios` | `scenarios/<id>/impacts/<portfolio>.json`, `clients/<client>.json`, `rollup.json` |
 | KYC peer | Mock: a scripted A2A executor | no | the Relationship Analyst, over A2A | an answer, not a file |
 
 The four setups:
@@ -52,11 +54,14 @@ flowchart LR
     MRE["rm-dashboard-mandate-reconcile"]
     ACT["rm-dashboard-actions"]
     OVW["rm-dashboard-overview"]
+    SCN["rm-dashboard-scenarios"]
   end
 
   subgraph MODEL["Model-backed agents"]
     MOA["Market Outlook analyst<br/>(Deep Agents)"]
     IOA["Instrument Outlook analyst<br/>(Deep Agents)"]
+    SCA["Scenario analyst<br/>(Deep Agents)"]
+    SCI["Scenario impact<br/>(code + prose)"]
     REL["Relationship Analyst<br/>(Deep Agents)"]
     POR["Portfolio Analyst<br/>(Deep Agents)"]
     INS["Instrument Analyst<br/>(Deep Agents)"]
@@ -78,9 +83,10 @@ flowchart LR
     FMREC[("mandate-reconciliation/")]
     FACT[("actions/")]
     FOVW[("overview/")]
+    FSCN[("scenarios/")]
   end
 
-  TOOLS["Tool registry<br/>domain, analytics, outlook, peer"]
+  TOOLS["Tool registry<br/>domain, analytics, outlook, scenario, peer"]
   POL["Policy engine (mock)<br/>+ audit log"]
 
   OUT --> MOA
@@ -91,6 +97,8 @@ flowchart LR
   ACT --> CAC
   OVW --> OVB
   OVW --> OVS
+  SCN --> SCA
+  SCN --> SCI
 
   REL ==>|"task delegation (in-process)"| POR
   SES -.->|"starts"| REL
@@ -118,11 +126,16 @@ flowchart LR
   OVB --> OVS
   OVB --> FOVW
   OVS --> FOVW
+  SCA --> FSCN
+  FSCN -->|"scenario.vector"| SCI
+  SCI --> FSCN
 
   REL --- TOOLS
   POR --- TOOLS
   INS --- TOOLS
   MOA --- TOOLS
+  SCA --- TOOLS
+  SCI --- TOOLS
   IOA --- TOOLS
   NRC --- TOOLS
   MRC --- TOOLS
@@ -152,10 +165,13 @@ flowchart LR
   M --> C["5 rm-dashboard-actions<br/>next actions per client"]
   C --> V["6 rm-dashboard-overview<br/>ranked actions per RM"]
   V --> W["rm-dashboard-serve<br/>read-only API and dashboard"]
+  O --> SC["rm-dashboard-scenarios<br/>vectors, impacts, roll-ups<br/>(independent of 2 to 6)"]
+  SC --> W
 ```
 
 `outlook` runs first because the client analysis reads its files. `analyse` writes the report and evidence; `reconcile`
 reads both; `mandate-reconcile` reads the evidence's computed mandate, position-limit and exclusion breaches and the notes; `actions` reads the report, the evidence and, when present, the note and mandate reconciliations; `overview` reads the actions.
+`scenarios` reads only the database and the scenario catalogue; it can run at any time and the API serves its files next to the rest.
 Each command takes `--as-of` (required) and writes under `reports/<as-of>/`.
 
 ## 2. Runners
@@ -168,6 +184,7 @@ Runners are the only callers of the batch agents. Each is a console script from 
 | `rm-dashboard-seed` | `data.seed:main` | none | loads the CSV and JSON data into SQLite | `sample/.../data` | `rm.db` |
 | `rm-dashboard-serve` | `api.serve:main` | none | read-only HTTP API | `rm.db`, `reports/` | none |
 | `rm-dashboard-outlook` | `runners.outlook:run_outlook` | `outlook_analyst` (market, then per instrument) | one market outlook, then one per held instrument, thread pool of `max_concurrency` | `rm.db`, earlier outlooks | `outlook/market.json`, `outlook/instruments/<id>.json`, evidence, `summary.json`, `audit.jsonl` (append-only) |
+| `rm-dashboard-scenarios` | `runners.scenarios:run_scenarios` | `scenario_analyst` (one per scenario), `scenario_impact` (per portfolio x scenario, then client and RM summaries) | units in a thread pool of `max_concurrency`; `--scenario`, `--portfolio` filters, `--force` | `rm.db`, `reports/scenarios/catalogue.json` | `scenarios/<id>/vector.json`, `impacts/<portfolio>.json`, `clients/<client>.json`, `rollup.json`, evidence, `scenarios/summary.json`, `scenarios/audit.jsonl` (append-only) |
 | `rm-dashboard-analyse` | `runners.batch:run_batch` | `relationship_analyst` (which delegates to `portfolio_analyst`) | one run per client, thread pool | `rm.db`, outlooks | `<client>.json`, `evidence/<client>.json`, `summary.json`, `audit.jsonl` |
 | `rm-dashboard-reconcile` | `runners.reconcile:run_reconcile` | `note_reconciler` | one call per client, thread pool | client report and evidence, notes | `reconciliation/<client>.json`, `summary.json`, `audit.jsonl` |
 | `rm-dashboard-mandate-reconcile` | `runners.mandate_reconcile:run_mandate_reconcile` | `mandate_reconciler` | one call per client with breaches and notes, thread pool | client report and evidence (breaches), notes | `mandate-reconciliation/<client>.json`, `summary.json`, `audit.jsonl` |
@@ -185,7 +202,8 @@ What every agent runner does the same way:
    others: an exception becomes a `partial` result with an `agent_error` gap.
 5. Writes one JSON file per subject, a `summary.json` with status counts, and an `audit.jsonl`.
 6. Is re-runnable: `analyse`, `reconcile`, `actions` and `overview` overwrite their files; `outlook` carries forward
-   unchanged views and leaves an existing outlook of the same date alone unless `--force`.
+   unchanged views and leaves an existing outlook of the same date alone unless `--force`; `scenarios` skips every unit whose input hash
+   is unchanged, writes each unit as soon as it is done and resumes after an interruption.
 
 ## 3. How an agent runs and is called
 
@@ -391,6 +409,64 @@ flowchart TB
 - **Checks after the model:** the guard of 4.7, plus confidence caps while risk statistics are unavailable for lack of history.
 - **Model used:** the configured model or the stub.
 
+### 4.8.1 Scenario analyst (`scenario_analyst`)
+
+- **Purpose:** how the markets would move over the scenario's horizon if the scenario happened: a best, likely and worst
+  percentage move per market channel, with rationale, explainer, cited evidence and an anchoring past event. Independent of any
+  client; the moves are conditional, not forecasts or probabilities.
+- **Setup:** Deep Agents graph with a tool loop (`scenarios/agent.py`, `SPEC`); five tools. One run per scenario and date; the
+  result is cached by an input hash and shared by every portfolio.
+- **Subject and trigger:** a scenario id (stored text: premise, mirrored event, horizon) and `as_of`. Called by
+  `rm-dashboard-scenarios` once per scenario.
+- **Inputs and tools:** `market.history`, `analytics.market_trend`, `market.snapshot`, `events.list`, `news.list`. The request lists
+  the channel vocabulary derived from the instruments in the data.
+- **Delegation and callers:** none.
+- **Output and file:** `scenarios/<id>/vector.json` and `scenarios/<id>/evidence/vector.json`.
+- **Checks after the model:** `scenarios/guard.py`: moves keyed to a single instrument or to an unreachable channel are removed; a
+  move needs evidence of this run and its date; figures in its text must be in that evidence or be one of its moves; values are
+  reordered by code to worst <= likely <= best; an anchor must be an event the run returned; a model failure gives a vector
+  without channels.
+- **Model used:** the configured model or the stub.
+
+```mermaid
+flowchart TB
+  TXT["scenario text<br/>+ channel vocabulary"] --> AGENT["Deep Agents run<br/>five tools"]
+  AGENT --> GUARD["vector guard"]
+  GUARD --> SAVE[("scenarios/id/vector.json")]
+  FAIL["model failure"] -.-> SAVE
+```
+
+### 4.8.2 Scenario impact (`scenario_impact`)
+
+- **Purpose:** what a scenario does to one portfolio, and the words around it. **Every figure is computed by code** (section 9 of
+  [methods.md](methods.md)); the agent places the few holdings the rules cannot map onto channels and writes the summary.
+- **Setup:** `scenarios/impact.py` (arithmetic, bands, LTV) and `scenarios/writer.py` (the same Deep Agents setup with another prompt
+  and allow-list, asked one task at a time: `mapping`, `summary`, `client_summary`, `rm_summary`).
+- **Subject and trigger:** a portfolio and a scenario at `as_of`, run by `rm-dashboard-scenarios` after the vector; then one client
+  summary per client and one RM-book summary per scenario.
+- **Inputs and tools:** `scenario.vector`, `portfolios.get`, `positions.list`, `instruments.get`, `analytics.exposure`,
+  `analytics.mandate_drift`, `credit.facilities`. The computed figures are given in the request.
+- **Delegation and callers:** none.
+- **Output and file:** `scenarios/<id>/impacts/<portfolio>.json` (three cases, bands, collateral, positions with channels, summary,
+  explainers, gaps), `clients/<client>.json`, `rollup.json`.
+- **Checks after the model:** a mapping is accepted only for a holding the rules could not place, onto channels of the vector, never
+  fx, with a reason; a summary is accepted only if every figure it quotes equals a computed value and it does not turn a gain into
+  a loss, otherwise a summary built by code replaces it. A model failure costs the prose, never the figures.
+- **Model used:** the configured model or the stub.
+
+```mermaid
+flowchart TB
+  V[("vector.json")] --> MAP["map holdings to channels<br/>(rules)"]
+  H["holdings, mandate, facilities"] --> MAP
+  MAP --> AMB{"unmapped<br/>holdings?"}
+  AMB -->|yes| AG["agent proposes channels<br/>(guarded)"]
+  AMB -->|no| CALC
+  AG --> CALC["code: three cases, bands, LTV"]
+  CALC --> SUM["agent writes the summary<br/>(figure check)"]
+  SUM --> SAVE[("impacts/portfolio.json")]
+  SAVE --> ROLL["client and RM roll-ups<br/>(sums by code)"]
+```
+
 ### 4.9 KYC peer (mock)
 
 - **Purpose:** stands in for the bank's KYC and compliance system.
@@ -410,50 +486,51 @@ Agents have no data access except through tools. A tool is registered once (`Too
 an agent only if it is on that agent's allow-list (`tools/allowlists.py`). A call outside the list is refused. Every call
 passes the `tool_authorisation` and `freshness_pit` checkpoints and is audited, and every result is an evidence envelope
 with an id the agent must cite. Kinds: `domain` (data reads), `analytics` (deterministic calculations), `outlook`
-(read-only access to persisted outlooks) and `peer` (A2A).
+(read-only access to persisted outlooks), `scenario` (read-only access to stored shock vectors) and `peer` (A2A).
 
 Client Actions, the RM Overview and the Note Reconciler's model have no tools. The Note Reconciler's single tool is read by
 code, not chosen by the model. A blank row means the tool is registered and on no allow-list.
 
-| Tool | Kind | Purpose | Relationship | Portfolio | Instrument | Note reconciler | Market outlook | Instrument outlook |
-|---|---|---|---|---|---|---|---|---|
-| `analytics.change` | analytics | Change in portfolio value between two dates decomposed into price, FX and flow. |  | x |  |  |  |  |
-| `analytics.collateral_funding` | analytics | Whether a client's needs can be funded without breaching the facility when collateral is pledged. | x |  |  |  |  |  |
-| `analytics.concentration` | analytics | Client-level concentration across portfolios with look-through, HHI and top-N. | x |  |  |  |  |  |
-| `analytics.credit_ltv` | analytics | Loan-to-value, headroom to trigger and cure amount for a facility. | x |  |  |  |  |  |
-| `analytics.exclusion_breaches` | analytics | Held instruments flagged sustainability_excluded in a mandate with binding exclusions, direct and through structured products; custody portfolios are not applicable. |  | x |  |  |  |  |
-| `analytics.exposure` | analytics | Portfolio exposure by asset_class, currency, sector or region. |  | x |  |  |  |  |
-| `analytics.liquidity` | analytics | Liquid assets against planned needs and uncalled commitments within a horizon. | x |  |  |  |  |  |
-| `analytics.mandate_drift` | analytics | Asset-class weights against mandate bands; custody portfolios are not applicable. |  | x |  |  |  |  |
-| `analytics.market_trend` | analytics | Level and change of every market series against the previous and the first snapshot. |  |  |  |  | x |  |
-| `analytics.pnl` | analytics | Unrealised profit and loss of a portfolio, excluding positions without cost basis. |  | x |  |  |  |  |
-| `analytics.risk` | analytics | Volatility, VaR, drawdown or Sharpe; insufficient_history when the series is too short. |  |  | x |  |  |  |
-| `analytics.weights` | analytics | Position weights of a portfolio, with the denominator stated. |  | x |  |  |  |  |
-| `cash_needs.list` | domain | Planned cash needs of a client with stated certainty. | x |  |  |  |  |  |
-| `clients.get` | domain | Client profile as of a date. Unversioned attributes are tagged current_only. | x |  |  |  |  |  |
-| `clients.list` | domain | Clients that exist at a date, with a few identifying fields. |  |  |  |  |  |  |
-| `commitments.list` | domain | Private-markets commitments of a client. | x |  |  |  |  |  |
-| `credit.facilities` | domain | Credit facilities of a client with figures per snapshot up to as_of. | x |  |  |  |  |  |
-| `events.list` | domain | Curated dated events up to as_of. | x | x | x |  | x |  |
-| `events.relevant` | domain | Events dated up to as_of that may bear on one instrument (region, sector, asset class, name or underlying), each with what it matched on. Candidates only. |  |  |  |  |  | x |
-| `instruments.context` | domain | Instrument reference data, price path across snapshots, peers with relative performance, and which risk statistics the history allows. |  |  |  |  |  | x |
-| `instruments.get` | domain | Instrument reference data. |  | x | x |  |  |  |
-| `instruments.prices` | domain | Instrument price history, one row per snapshot up to as_of. |  |  | x |  |  |  |
-| `market.history` | domain | Market series (indices, rates, FX, commodities) at every snapshot up to the effective one. |  |  |  |  | x |  |
-| `market.snapshot` | domain | Market series (indices, rates, FX, commodities) at the effective snapshot. | x | x | x |  |  |  |
-| `news.list` | domain | News for the period: dated market-moving events from the curated event log, up to as_of. No external news feed yet. | x |  | x |  | x |  |
-| `notes.list` | domain | Relationship-manager notes up to as_of, as dated quoted text. | x |  |  | x |  |  |
-| `outlook.instrument` | outlook | The outlook of one instrument for the run's date (the latest one not after it), as the bank's view with its date. |  | x |  |  |  |  |
-| `outlook.market` | outlook | The market outlook for the run's date (the latest one not after it), as the bank's view with its date. | x | x |  |  |  | x |
-| `outlook.previous_instrument` | outlook | The latest earlier outlook of one instrument, as a reference view only (never support for a driver or risk). |  |  |  |  |  | x |
-| `outlook.previous_market` | outlook | The latest earlier market outlook, as a reference view only (never support for a driver or risk). |  |  |  |  | x |  |
-| `parties.get` | domain | The client as a party (individual or organisation) with its relationships list. | x |  |  |  |  |  |
-| `peers.kyc_status` | peer | KYC and compliance status of a client from the bank's KYC peer agent (A2A). | x |  |  |  |  |  |
-| `persons.list` | domain | Persons linked to a client. Currently no data source: returns no_data. | x |  |  |  |  |  |
-| `portfolios.get` | domain | One portfolio with AUM at the effective snapshot. |  | x |  |  |  |  |
-| `portfolios.list` | domain | Portfolios of a client with AUM at the effective snapshot. | x |  |  |  |  |  |
-| `positions.list` | domain | Positions of a portfolio at the effective snapshot, with data-quality flags. |  | x |  |  |  |  |
-| `relationships.list` | domain | Related parties of a client. Currently no data source: returns no_data. | x |  |  |  |  |  |
+| Tool | Kind | Purpose | Relationship | Portfolio | Instrument | Note reconciler | Market outlook | Instrument outlook | Scenario analyst | Scenario impact |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `analytics.change` | analytics | Change in portfolio value between two dates decomposed into price, FX and flow. |  | x |  |  |  |  |  |  |
+| `analytics.collateral_funding` | analytics | Whether a client's needs can be funded without breaching the facility when collateral is pledged. | x |  |  |  |  |  |  |  |
+| `analytics.concentration` | analytics | Client-level concentration across portfolios with look-through, HHI and top-N. | x |  |  |  |  |  |  |  |
+| `analytics.credit_ltv` | analytics | Loan-to-value, headroom to trigger and cure amount for a facility. | x |  |  |  |  |  |  |  |
+| `analytics.exclusion_breaches` | analytics | Held instruments flagged sustainability_excluded in a mandate with binding exclusions, direct and through structured products; custody portfolios are not applicable. |  | x |  |  |  |  |  |  |
+| `analytics.exposure` | analytics | Portfolio exposure by asset_class, currency, sector or region. |  | x |  |  |  |  |  | x |
+| `analytics.liquidity` | analytics | Liquid assets against planned needs and uncalled commitments within a horizon. | x |  |  |  |  |  |  |  |
+| `analytics.mandate_drift` | analytics | Asset-class weights against mandate bands; custody portfolios are not applicable. |  | x |  |  |  |  |  | x |
+| `analytics.market_trend` | analytics | Level and change of every market series against the previous and the first snapshot. |  |  |  |  | x |  | x |  |
+| `analytics.pnl` | analytics | Unrealised profit and loss of a portfolio, excluding positions without cost basis. |  | x |  |  |  |  |  |  |
+| `analytics.risk` | analytics | Volatility, VaR, drawdown or Sharpe; insufficient_history when the series is too short. |  |  | x |  |  |  |  |  |
+| `analytics.weights` | analytics | Position weights of a portfolio, with the denominator stated. |  | x |  |  |  |  |  |  |
+| `cash_needs.list` | domain | Planned cash needs of a client with stated certainty. | x |  |  |  |  |  |  |  |
+| `clients.get` | domain | Client profile as of a date. Unversioned attributes are tagged current_only. | x |  |  |  |  |  |  |  |
+| `clients.list` | domain | Clients that exist at a date, with a few identifying fields. |  |  |  |  |  |  |  |  |
+| `commitments.list` | domain | Private-markets commitments of a client. | x |  |  |  |  |  |  |  |
+| `credit.facilities` | domain | Credit facilities of a client with figures per snapshot up to as_of. | x |  |  |  |  |  |  | x |
+| `events.list` | domain | Curated dated events up to as_of. | x | x | x |  | x |  | x |  |
+| `events.relevant` | domain | Events dated up to as_of that may bear on one instrument (region, sector, asset class, name or underlying), each with what it matched on. Candidates only. |  |  |  |  |  | x |  |  |
+| `instruments.context` | domain | Instrument reference data, price path across snapshots, peers with relative performance, and which risk statistics the history allows. |  |  |  |  |  | x |  |  |
+| `instruments.get` | domain | Instrument reference data. |  | x | x |  |  |  |  | x |
+| `instruments.prices` | domain | Instrument price history, one row per snapshot up to as_of. |  |  | x |  |  |  |  |  |
+| `market.history` | domain | Market series (indices, rates, FX, commodities) at every snapshot up to the effective one. |  |  |  |  | x |  | x |  |
+| `market.snapshot` | domain | Market series (indices, rates, FX, commodities) at the effective snapshot. | x | x | x |  |  |  | x |  |
+| `news.list` | domain | News for the period: dated market-moving events from the curated event log, up to as_of. No external news feed yet. | x |  | x |  | x |  | x |  |
+| `notes.list` | domain | Relationship-manager notes up to as_of, as dated quoted text. | x |  |  | x |  |  |  |  |
+| `outlook.instrument` | outlook | The outlook of one instrument for the run's date (the latest one not after it), as the bank's view with its date. |  | x |  |  |  |  |  |  |
+| `outlook.market` | outlook | The market outlook for the run's date (the latest one not after it), as the bank's view with its date. | x | x |  |  |  | x |  |  |
+| `outlook.previous_instrument` | outlook | The latest earlier outlook of one instrument, as a reference view only (never support for a driver or risk). |  |  |  |  |  | x |  |  |
+| `outlook.previous_market` | outlook | The latest earlier market outlook, as a reference view only (never support for a driver or risk). |  |  |  |  | x |  |  |  |
+| `parties.get` | domain | The client as a party (individual or organisation) with its relationships list. | x |  |  |  |  |  |  |  |
+| `peers.kyc_status` | peer | KYC and compliance status of a client from the bank's KYC peer agent (A2A). | x |  |  |  |  |  |  |  |
+| `persons.list` | domain | Persons linked to a client. Currently no data source: returns no_data. | x |  |  |  |  |  |  |  |
+| `portfolios.get` | domain | One portfolio with AUM at the effective snapshot. |  | x |  |  |  |  |  | x |
+| `portfolios.list` | domain | Portfolios of a client with AUM at the effective snapshot. | x |  |  |  |  |  |  |  |
+| `positions.list` | domain | Positions of a portfolio at the effective snapshot, with data-quality flags. |  | x |  |  |  |  |  | x |
+| `relationships.list` | domain | Related parties of a client. Currently no data source: returns no_data. | x |  |  |  |  |  |  |  |
+| `scenario.vector` | scenario | The stored market shock vector of a scenario for the run's date: best, likely and worst move per channel. |  |  |  |  |  |  |  | x |
 
 Things worth knowing from the matrix:
 

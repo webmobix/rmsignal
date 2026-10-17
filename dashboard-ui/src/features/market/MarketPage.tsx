@@ -1,10 +1,11 @@
 import type { Schemas } from "#/api/client";
-import { useData } from "#/api/queries";
+import { type Overview, useData } from "#/api/queries";
 import { IdLink } from "#/components/IdLink";
 import { PageHeader } from "#/components/PageHeader";
 import { EmptyNotice, StateBoundary } from "#/components/StateBoundary";
 import { ViewCard } from "#/components/ViewCard";
 import { fmtDate, fmtUsd, titleCase } from "#/lib/format";
+import { ScenarioPanel } from "../scenarios/ScenarioPanel";
 
 type Outlook = Schemas["MarketOutlookResponse"];
 type Events = Schemas["EventsResponse"];
@@ -94,6 +95,10 @@ export function EventItem({ event }: { event: EventRow }) {
 export function MarketPage() {
 	const outlook = useData<Outlook>("/market-outlook");
 	const events = useData<Events>("/events");
+	const overview = useData<Overview>("/overview");
+	const names = Object.fromEntries(
+		(overview.data?.client_rows ?? []).map((c) => [c.client_id, c.client_name]),
+	);
 	return (
 		<>
 			<PageHeader
@@ -168,6 +173,7 @@ export function MarketPage() {
 					)
 				}
 			</StateBoundary>
+			<ScenarioPanel names={names} />
 			<section className="mt-12" aria-labelledby="tl-h">
 				<h2 id="tl-h" className="mb-4 text-2xl">
 					Event timeline

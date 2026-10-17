@@ -1,4 +1,4 @@
-import { useParams } from "@tanstack/react-router";
+import { getRouteApi, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { Schemas } from "#/api/client";
 import { useData } from "#/api/queries";
@@ -15,9 +15,12 @@ import { ClientSummary } from "./Summary";
 
 type Detail = Schemas["ClientDetail"];
 
+const route = getRouteApi("/clients/$clientId");
+
 export function ClientPage() {
 	const { clientId } = useParams({ from: "/clients/$clientId" });
-	const [tab, setTab] = useState("summary");
+	const search = route.useSearch();
+	const [tab, setTab] = useState(search.tab ?? "summary");
 	const query = useData<Detail>(`/clients/${clientId}`);
 	const history = useData<Schemas["AumHistory"]>(
 		`/clients/${clientId}/aum-history`,
@@ -60,7 +63,12 @@ export function ClientPage() {
 						{tab === "compare" ? (
 							<SnapshotCompare clientId={clientId} dates={dates} />
 						) : null}
-						{tab === "scenarios" ? <ScenarioTab clientId={clientId} /> : null}
+						{tab === "scenarios" ? (
+							<ScenarioTab
+								clientId={clientId}
+								initialScenario={search.scenario}
+							/>
+						) : null}
 					</>
 				)}
 			</StateBoundary>

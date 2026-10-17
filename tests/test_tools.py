@@ -8,6 +8,7 @@ from rm_dashboard.tools import ALLOWLISTS, EvidenceStore, ToolRefused
 from rm_dashboard.tools.analytics_tools import ANALYTICS_TOOLS
 from rm_dashboard.tools.domain_tools import DOMAIN_TOOLS
 from rm_dashboard.tools.outlook_tools import OUTLOOK_TOOLS
+from rm_dashboard.tools.scenario_tools import SCENARIO_TOOLS
 from rm_dashboard.tools.peer_tools import PEER_TOOLS
 
 AS_OF = "2026-08-26"
@@ -242,7 +243,7 @@ def test_no_tool_accepts_path_or_sql(registry):
 
 
 def test_tool_inventory_is_the_defined_set(registry):
-    assert set(registry.names()) == {s.name for s in DOMAIN_TOOLS + ANALYTICS_TOOLS + PEER_TOOLS + OUTLOOK_TOOLS}
+    assert set(registry.names()) == {s.name for s in DOMAIN_TOOLS + ANALYTICS_TOOLS + PEER_TOOLS + OUTLOOK_TOOLS + SCENARIO_TOOLS}
     for agent, names in ALLOWLISTS.items():
         assert {s.name for s in registry.toolbox(agent, names).specs()} == set(names)
 

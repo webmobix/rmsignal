@@ -13,6 +13,7 @@ from .analytics_tools import ANALYTICS_TOOLS
 from .domain_tools import DOMAIN_TOOLS
 from .outlook_tools import OUTLOOK_TOOLS
 from .peer_tools import PEER_TOOLS
+from .scenario_tools import SCENARIO_TOOLS
 from .spec import ToolContext, ToolSpec
 
 
@@ -59,7 +60,7 @@ class Refusal:
 class ToolRegistry:
     def __init__(self, ctx: ToolContext, specs: Iterable[ToolSpec] | None = None):
         self.ctx = ctx
-        self.specs: dict[str, ToolSpec] = {s.name: s for s in (specs or [*DOMAIN_TOOLS, *ANALYTICS_TOOLS, *PEER_TOOLS, *OUTLOOK_TOOLS])}
+        self.specs: dict[str, ToolSpec] = {s.name: s for s in (specs or [*DOMAIN_TOOLS, *ANALYTICS_TOOLS, *PEER_TOOLS, *OUTLOOK_TOOLS, *SCENARIO_TOOLS])}
 
     def names(self) -> list[str]:
         return sorted(self.specs)

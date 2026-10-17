@@ -240,3 +240,17 @@ outlooks stay as the reference. With `--instruments` or by default for every hel
 context of its peers, the events that bear on it and the market outlook. Run it before the client analysis: the pipeline order is
 `rm-dashboard-outlook` -> `rm-dashboard-analyse` -> `rm-dashboard-reconcile` -> `rm-dashboard-mandate-reconcile` -> `rm-dashboard-actions` -> `rm-dashboard-overview`, and the client
 analysis reads the outlooks (a missing outlook is a gap, not a failure). See [docs/agents.md](docs/agents.md).
+
+### Scenarios
+
+```sh
+uv run rm-dashboard-scenarios --as-of 2026-08-26 --db rm.db --reports-dir reports [--scenario ID] [--portfolio PF-0001] [--force]
+```
+
+A scenario is stored text (`reports/scenarios/catalogue.json`, seeded with three; add one by adding a record). For each scenario the
+command writes, under `reports/<as-of>/scenarios/<id>/`, a market shock vector (best, likely and worst move per market channel over the
+horizon, default 3 months), the computed impact on every portfolio, and the client and RM-book roll-ups. Every figure is computed by
+code; a model supplies the market judgment, places the few holdings the rules cannot map, and writes the summaries, which are checked
+against the computed figures. Cases are conditional on the scenario and are not probabilities. A result is rewritten only when its
+inputs change (scenario text, market data, holdings, model); a rerun resumes after an interruption. It is independent of the other
+stages and read by `GET /api/scenarios`. See [docs/methods.md](docs/methods.md) section 9.

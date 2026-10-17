@@ -64,6 +64,10 @@ def plan_for(role: str, mode: str, messages: list[BaseMessage]) -> AIMessage:
         return _client_actions(mode, human_text(messages))
     if role == "outlook_analyst":
         return _outlook(mode, messages)
+    if role == "scenario_analyst":
+        return _scenario_analyst(mode, messages)
+    if role == "scenario_impact":
+        return _scenario_impact(mode, human_text(messages))
     humans = human_text(messages)
     results = tool_results(messages)
     if len(humans) > 1 and results:
@@ -494,3 +498,72 @@ def _outlook_instrument(mode: str, messages: list[BaseMessage], iid: str) -> AIM
             "drivers": drivers, "risks": [], "would_change_if": "A new price, event or market outlook points the other way.",
             "change": {"why": "The price moved since the previous outlook.", "evidence_ids": [ctx["evidence_id"]] if ctx else [], "event_refs": []}}
     return AIMessage(content=json.dumps({"summary": "House view of the instrument.", "view": view}))
+
+
+# ---- scenarios ------------------------------------------------------------------------------------
+_SCENARIO_MOVES = {"market": (3.0, -2.0, -6.0), "overlay": (2.0, 0.5, -1.0), "fx": (1.0, -0.5, -2.0)}
+"""(best, likely, worst) of a channel by kind; ``gold`` is a safe haven and moves the other way."""
+
+
+def _scenario_analyst(mode: str, messages: list[BaseMessage]) -> AIMessage:
+    if mode == "unparsable":
+        return AIMessage(content="No structured answer.")
+    humans = human_text(messages)
+    request = humans[0] if humans else ""
+    if _steps_taken(messages) == 0:
+        return _calls(messages, [("analytics.market_trend", {}), ("news.list", {})])
+    by = _by_tool(tool_results(messages))
+    trend, news = _first(by, "analytics.market_trend"), _first(by, "news.list")
+    anchor = None
+    m = re.search(r"Event log (\d{4}-\d{2}-\d{2})", request)
+    if m and news:
+        anchor = next((e["event_id"] for e in ((news.get("data") or {}).get("news") or []) if e["event_date"] == m.group(1)), None)
+    cited = [trend["evidence_id"]] if trend else []
+    channels = []
+    for name, kind in re.findall(r"^- (\w+) \[(market|overlay|fx)\]:", request, flags=re.M):
+        best, likely, worst = (6.0, 3.0, 0.0) if name == "gold" else _SCENARIO_MOVES[kind]
+        channels.append({"channel": name, "best": best, "likely": likely, "worst": worst,
+                         "rationale": f"The {name} channel follows the market series and the events of the scenario.",
+                         "explainer": "Read as the move of this channel over the horizon if the scenario happened.",
+                         "evidence_ids": cited, "anchored_event": anchor,
+                         "anchor_note": "" if anchor else "Not anchored to history: no comparable past event exists in the event log."})
+    if mode == "misordered" and channels:
+        channels[0]["likely"] = channels[0]["best"] + 1.0
+    if mode == "uncited" and channels:
+        channels[0]["evidence_ids"] = []
+    if mode == "single" and channels:
+        channels.append({**channels[0], "channel": "SYN-EQ-0001"})
+    if mode == "bad_figure" and channels:
+        channels[0]["rationale"] = "The channel moved 98765 points in the past."
+    return AIMessage(content=json.dumps({"summary": "A conditional view of the market under the scenario.", "channels": channels}))
+
+
+def _figures(request: str) -> dict:
+    m = re.search(r"FIGURES (\{.*\})", request, flags=re.S)
+    return json.loads(m.group(1)) if m else {}
+
+
+def _scenario_impact(mode: str, humans: list[str]) -> AIMessage:
+    request = humans[0] if humans else ""
+    if mode == "raise_after_tools":
+        raise StubModelError("stub model failure while writing")
+    if mode == "unparsable":
+        return AIMessage(content="No structured answer.")
+    if "TASK mapping" in request:
+        allowed = re.findall(r"^- (\w+) \[(?:market|overlay)\]", request, flags=re.M)
+        ids = re.findall(r"^- (SYN-[A-Z]{2}-\d{4}):", request, flags=re.M)
+        channel = "not_a_channel" if mode == "bad_channel" else (next((c for c in allowed if c.startswith("equity_")), allowed[0] if allowed else ""))
+        return AIMessage(content=json.dumps({"mappings": [
+            {"instrument_id": i, "channels": [channel], "reason": "The holding behaves like listed equity in this scenario."} for i in ids]}))
+    cases = (_figures(request).get("cases") or {})
+    likely = (cases.get("likely") or {}).get("delta_pct")
+    worst, best = (cases.get("worst") or {}).get("delta_pct"), (cases.get("best") or {}).get("delta_pct")
+    if likely is None:
+        return AIMessage(content=json.dumps({"summary": "No figures were given."}))
+    shown = 77.7 if mode == "bad_figure" else abs(likely)
+    word = "gain" if likely >= 0 else "loss"
+    if mode == "wrong_sign":
+        word = "loss" if likely >= 0 else "gain"
+    text = (f"Under the scenario the likely case is a {word} of {shown:.1f}%, between {abs(worst):.1f}% at worst and {abs(best):.1f}% at best. "
+            "The cases are conditional on the scenario, not probabilities.")
+    return AIMessage(content=json.dumps({"summary": text}))

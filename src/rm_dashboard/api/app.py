@@ -15,7 +15,7 @@ from .evidence import router as evidence_router
 from .instruments import router as instruments_router
 from .market import router as market_router
 from .overview import router as overview_router
-from .scenarios import PlaceholderScenarioProvider, ScenarioProvider
+from .scenarios import ComputedScenarioProvider, ScenarioProvider
 from .scenarios import router as scenarios_router
 from .portfolios import router as portfolios_router
 from .sources import router as sources_router
@@ -53,7 +53,7 @@ def create_app(db_path: str | Path, reports_dir: str | Path | None = None,
 
     app.state.db_path = Path(db_path)
     app.state.read = ReadContext.build(Path(db_path), reports)
-    app.state.scenarios = scenarios or PlaceholderScenarioProvider()
+    app.state.scenarios = scenarios or ComputedScenarioProvider(app.state.read)  # rollback: PlaceholderScenarioProvider()
     app.include_router(sources_router)
     app.include_router(core_router)
     app.include_router(overview_router)

@@ -221,26 +221,42 @@ those instruments with the USD they hold. `reach` has `derived` (always true), `
 | duration, rate-sensitive, fixed income | asset class Fixed Income |
 | private credit, semi-liquid, alternatives | asset class Alternatives |
 
-## Scenarios (placeholder)
+## Scenarios
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/scenarios` | the scenario catalogue |
+| `GET /api/scenarios` | the scenario catalogue, with each scenario's market summary and shock vector when computed |
 | `GET /api/clients/{client_id}/scenarios` | one result per catalogue scenario for the client |
+| `GET /api/scenarios/{scenario_id}/rollup` | the RM-book roll-up of one scenario; 404 for an unknown scenario |
 
-There is no scenario engine yet. These endpoints return fixed placeholder data in the final contract shape so that a UI can be built
-now. Every payload carries `"status": "placeholder"` and a `note` saying the content is illustrative; a UI must mark it so and must
-not style it as a real breach. The values are **not** computed from the client's holdings: two clients get identical results.
+Scenarios are stored text (`reports/scenarios/catalogue.json`, seeded with three) and results are computed by
+`rm-dashboard-scenarios` and read from `reports/<as_of>/scenarios/`. Nothing is computed on a request. Names, premises and caveats
+come from the backend only.
 
-Scenario names, premises and caveats are defined by the backend only. The catalogue holds `scenario_id`, `name`, `premise`,
-`mirrors` (the event-log entry the scenario is drawn from, as `Event log <date>: ...`) and `caveat`.
+Every figure is computed by code from the client's holdings and a market **shock vector**: a best, likely and worst move per market
+channel over the scenario's horizon (default 3 months). The cases are conditional on the scenario and are not probabilities; the
+likely case is a central case, and best and worst bracket it by applying all best (or all worst) channel moves together.
 
-A result adds, per scenario: `status`, `note`, `before_usd`, `after_usd`, `delta_usd`, `delta_pct`, `reached_pct` (share of
-wealth the stated channels reach), `untouched_count` (holdings no channel reaches), `collateral` (per facility `ltv_before_pct`,
-`ltv_after_pct`, `trigger_pct`, `breaches`, `shortfall_usd`), `bands` (mandate bands crossed: `before_pct`, `after_pct`,
-`band_min_pct`, `band_max_pct`, `crosses` as `out` or `in`) and `positions` (`instrument`, `asset_class`, `weight_pct`,
-`move_pct`, `delta_usd` and the `channels` it moved down, each with `channel`, `pct`, `why`).
+The catalogue holds `scenario_id`, `name`, `premise`, `mirrors` (the event-log entry the scenario is drawn from, as
+`Event log <date>: ...`), `caveat` (the not-a-probability statement), `horizon_months` and `market`: `null` until the scenario has
+been run for the date, else `status`, `summary`, `not_a_probability`, `horizon_months`, `gaps` and the `channels`, each with `channel`,
+`best`, `likely`, `worst` (percent), `rationale`, `explainer`, `evidence_ids`, `anchored_event` (the comparable past event) and
+`anchor_note` (the statement that the move is not anchored to history, when it is not). The payload `status` is `computed` when
+every scenario has a vector, else `placeholder`.
 
-The producer is a `ScenarioProvider` (`catalogue(as_of)`, `for_client(client_id, as_of)`, and a `status`), passed to `create_app`.
-`PlaceholderScenarioProvider` is the default. A computed provider with `status = "computed"` replaces it without a change to
-routes or response models; the top-level `status` then reads `computed` and the `note` is empty.
+A client result adds, per scenario: `status`, `note`, `before_usd`, `cases` (`best`, `likely`, `worst`, each with `before_usd`,
+`after_usd`, `delta_usd`, `delta_pct`, `bands` crossed in or out of the mandate band and `collateral` effects per facility:
+`ltv_before_pct`, `ltv_after_pct`, `trigger_pct`, `breaches`, `shortfall_usd`), `reached_pct` (share of wealth the channels reach),
+`untouched_count` (holdings no channel reaches), `positions` (`instrument`, `asset_class`, `weight_pct`, `moves` per case with
+`move_pct` and `delta_usd`, how it was `mapping`ped, and `channels` with their contribution per case and whether an agent assigned
+them), `portfolios` (the totals per portfolio), `coverage`, `summary`, `explainers` (how each headline figure is derived) and `gaps`.
+`status` is `computed`, `partial` (computed with gaps), `insufficient_data` (a run found nothing usable) or `placeholder` (not run,
+or fixed illustrative data from the placeholder provider). A result that is not computed carries no figures, only a `note`.
+
+The roll-up holds `cases` (book totals), `most_hit` (clients ranked by worst-case USD loss), `beneficiaries` (clients with a likely
+gain), `crossings` (per client, portfolio, case and kind `band` or `ltv`), `coverage` (`computed` of `total` clients and the `missing`
+ones; a partial book is never presented as complete), `summary` and `gaps`.
+
+The producer is a `ScenarioProvider` (`catalogue(as_of)`, `for_client(client_id, as_of)`, `rollup(scenario_id, as_of)`), passed to
+`create_app`. `ComputedScenarioProvider` is the default; `PlaceholderScenarioProvider` returns fixed illustrative data in the same
+models (status `placeholder`, identical for every client) and is available for tests and as a one-line rollback in `api/app.py`.

@@ -25,6 +25,15 @@ OUTLOOK_INSTRUMENT = (
     "instruments.context", "events.relevant", "outlook.market", "outlook.previous_instrument",
 )
 
+SCENARIO_ANALYST = (
+    "market.history", "analytics.market_trend", "market.snapshot", "events.list", "news.list",
+)
+
+SCENARIO_IMPACT = (
+    "scenario.vector", "portfolios.get", "positions.list", "instruments.get", "analytics.exposure", "analytics.mandate_drift",
+    "credit.facilities",
+)
+
 NOTE_RECONCILER = ("notes.list",)
 
 ALLOWLISTS = {
@@ -34,4 +43,6 @@ ALLOWLISTS = {
     "note_reconciler": NOTE_RECONCILER,
     "outlook_analyst": OUTLOOK_ANALYST,
     "outlook_instrument": OUTLOOK_INSTRUMENT,
+    "scenario_analyst": SCENARIO_ANALYST,
+    "scenario_impact": SCENARIO_IMPACT,
 }

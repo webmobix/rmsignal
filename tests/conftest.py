@@ -165,3 +165,31 @@ def api(seeded_db, api_reports):
 @pytest.fixture(scope="session")
 def reports_dir(api_reports) -> Path:
     return api_reports
+
+
+@pytest.fixture(scope="session")
+def scenario_reports(seeded_db, api_reports, tmp_path_factory) -> Path:
+    """A copy of the API run folder with one scenario computed for every portfolio (stub model)."""
+    from datetime import date
+
+    from rm_dashboard.agents import StubChatModel
+    from rm_dashboard.runners import open_registry
+    from rm_dashboard.runners.scenarios import run_scenarios
+    from rm_dashboard.settings import Settings
+
+    out = tmp_path_factory.mktemp("scenario_run") / "reports"
+    shutil.copytree(api_reports, out)
+    with open_registry(Settings(db_path=str(seeded_db), max_concurrency=4), with_peer=False) as reg:
+        run_scenarios(reg, as_of=date(2026, 8, 26), reports_dir=out, models=lambda role: StubChatModel(role=role),
+                      scenario_ids=["gulf-deterioration"])
+    return out
+
+
+@pytest.fixture(scope="session")
+def scenario_api(seeded_db, scenario_reports):
+    """The API on the seeded data with computed scenario results for ``gulf-deterioration`` only."""
+    from fastapi.testclient import TestClient
+
+    from rm_dashboard.api import create_app
+
+    return TestClient(create_app(seeded_db, scenario_reports))

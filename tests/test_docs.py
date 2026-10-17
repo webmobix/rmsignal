@@ -28,10 +28,11 @@ def test_readme_documents_guard_tolerance():
 # ---- docs/architecture.md stays in step with the agents, runners, tools and A2A skills ----------------------------------
 ARCH = DOCS / "architecture.md"
 MATRIX_ROLES = ("relationship_analyst", "portfolio_analyst", "instrument_analyst", "note_reconciler", "outlook_analyst",
-                "outlook_instrument")
+                "outlook_instrument", "scenario_analyst", "scenario_impact")
 AGENT_FIELDS = ("Purpose", "Setup", "Subject and trigger", "Inputs and tools", "Delegation and callers", "Output and file",
                 "Checks after the model", "Model used")
-OTHER_AGENT_ROLES = ("note_reconciler", "mandate_reconciler", "client_actions", "rm_overview_summary", "outlook_analyst", "outlook_instrument")
+OTHER_AGENT_ROLES = ("note_reconciler", "mandate_reconciler", "client_actions", "rm_overview_summary", "outlook_analyst", "outlook_instrument",
+                      "scenario_analyst", "scenario_impact")
 
 
 def _section(text: str, start: str, end: str | None = None) -> str:

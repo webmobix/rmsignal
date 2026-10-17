@@ -91,10 +91,10 @@ Each tool takes identifiers and `as_of` only (the agent layer supplies `as_of`; 
 | `analytics.concentration` | analytics | client_id, include_custody, top_n | Client-level concentration across portfolios with look-through, HHI and top-N. | relationship_analyst |
 | `analytics.credit_ltv` | analytics | facility_id, horizon_days | Loan-to-value, headroom to trigger and cure amount for a facility. | relationship_analyst |
 | `analytics.exclusion_breaches` | analytics | portfolio_id | Held instruments flagged sustainability_excluded in a mandate with binding exclusions, direct and through structured products; custody portfolios are not applicable. | portfolio_analyst |
-| `analytics.exposure` | analytics | portfolio_id, dimension | Portfolio exposure by asset_class, currency, sector or region. | portfolio_analyst |
+| `analytics.exposure` | analytics | portfolio_id, dimension | Portfolio exposure by asset_class, currency, sector or region. | portfolio_analyst, scenario_impact |
 | `analytics.liquidity` | analytics | client_id, horizon_days | Liquid assets against planned needs and uncalled commitments within a horizon. | relationship_analyst |
-| `analytics.market_trend` | analytics | - | Level and change of every market series against the previous and the first snapshot. | outlook_analyst |
-| `analytics.mandate_drift` | analytics | portfolio_id | Asset-class weights against mandate bands; custody portfolios are not applicable. | portfolio_analyst |
+| `analytics.market_trend` | analytics | - | Level and change of every market series against the previous and the first snapshot. | outlook_analyst, scenario_analyst |
+| `analytics.mandate_drift` | analytics | portfolio_id | Asset-class weights against mandate bands; custody portfolios are not applicable. | portfolio_analyst, scenario_impact |
 | `analytics.pnl` | analytics | portfolio_id | Unrealised profit and loss of a portfolio, excluding positions without cost basis. | portfolio_analyst |
 | `analytics.risk` | analytics | instrument_id, measure | Volatility, VaR, drawdown or Sharpe; insufficient_history when the series is too short. | instrument_analyst |
 | `analytics.weights` | analytics | portfolio_id | Position weights of a portfolio, with the denominator stated. | portfolio_analyst |
@@ -102,15 +102,15 @@ Each tool takes identifiers and `as_of` only (the agent layer supplies `as_of`; 
 | `clients.get` | domain | client_id | Client profile as of a date. Unversioned attributes are tagged current_only. | relationship_analyst |
 | `clients.list` | domain | - | Clients that exist at a date, with a few identifying fields. | - |
 | `commitments.list` | domain | client_id | Private-markets commitments of a client. | relationship_analyst |
-| `credit.facilities` | domain | client_id | Credit facilities of a client with figures per snapshot up to as_of. | relationship_analyst |
-| `events.list` | domain | - | Curated dated events up to as_of, each with a stable event_id. | instrument_analyst, outlook_analyst, portfolio_analyst, relationship_analyst |
+| `credit.facilities` | domain | client_id | Credit facilities of a client with figures per snapshot up to as_of. | relationship_analyst, scenario_impact |
+| `events.list` | domain | - | Curated dated events up to as_of, each with a stable event_id. | instrument_analyst, outlook_analyst, portfolio_analyst, relationship_analyst, scenario_analyst |
 | `events.relevant` | domain | instrument_id | Events dated up to as_of that may bear on one instrument (region, sector, asset class, name or underlying), each with what it matched on. Candidates only. | outlook_analyst (instrument runs) |
 | `instruments.context` | domain | instrument_id | Instrument reference data, price path across snapshots, peers with relative performance, and which risk statistics the history allows. | outlook_analyst (instrument runs) |
-| `instruments.get` | domain | instrument_id | Instrument reference data. | instrument_analyst, portfolio_analyst |
+| `instruments.get` | domain | instrument_id | Instrument reference data. | instrument_analyst, portfolio_analyst, scenario_impact |
 | `instruments.prices` | domain | instrument_id | Instrument price history, one row per snapshot up to as_of. | instrument_analyst |
-| `market.history` | domain | - | Market series (indices, rates, FX, commodities) at every snapshot up to the effective one. | outlook_analyst |
-| `market.snapshot` | domain | - | Market series (indices, rates, FX, commodities) at the effective snapshot. | instrument_analyst, portfolio_analyst, relationship_analyst |
-| `news.list` | domain | - | News for the period: dated market-moving events from the curated event log, up to as_of. No external news feed yet. | instrument_analyst, outlook_analyst, relationship_analyst |
+| `market.history` | domain | - | Market series (indices, rates, FX, commodities) at every snapshot up to the effective one. | outlook_analyst, scenario_analyst |
+| `market.snapshot` | domain | - | Market series (indices, rates, FX, commodities) at the effective snapshot. | instrument_analyst, portfolio_analyst, relationship_analyst, scenario_analyst |
+| `news.list` | domain | - | News for the period: dated market-moving events from the curated event log, up to as_of. No external news feed yet. | instrument_analyst, outlook_analyst, relationship_analyst, scenario_analyst |
 | `notes.list` | domain | client_id | Relationship-manager notes up to as_of, as dated quoted text. | relationship_analyst |
 | `outlook.instrument` | outlook | instrument_id | The outlook of one instrument for the run's date (the latest one not after it), as the bank's view with its date. | portfolio_analyst |
 | `outlook.market` | outlook | - | The market outlook for the run's date (the latest one not after it), as the bank's view with its date. | outlook_analyst (instrument runs), portfolio_analyst, relationship_analyst |
@@ -119,10 +119,11 @@ Each tool takes identifiers and `as_of` only (the agent layer supplies `as_of`; 
 | `parties.get` | domain | client_id | The client as a party (individual or organisation) with its relationships list. | relationship_analyst |
 | `peers.kyc_status` | peer | client_id | KYC and compliance status of a client from the bank's KYC peer agent (A2A). | relationship_analyst |
 | `persons.list` | domain | client_id | Persons linked to a client. Currently no data source: returns no_data. | relationship_analyst |
-| `portfolios.get` | domain | portfolio_id | One portfolio with AUM at the effective snapshot. | portfolio_analyst |
+| `portfolios.get` | domain | portfolio_id | One portfolio with AUM at the effective snapshot. | portfolio_analyst, scenario_impact |
 | `portfolios.list` | domain | client_id | Portfolios of a client with AUM at the effective snapshot. | relationship_analyst |
-| `positions.list` | domain | portfolio_id | Positions of a portfolio at the effective snapshot, with data-quality flags. | portfolio_analyst |
+| `positions.list` | domain | portfolio_id | Positions of a portfolio at the effective snapshot, with data-quality flags. | portfolio_analyst, scenario_impact |
 | `relationships.list` | domain | client_id | Related parties of a client. Currently no data source: returns no_data. | relationship_analyst |
+| `scenario.vector` | scenario | scenario_id | The stored market shock vector of a scenario for the run's date: best, likely and worst move per channel. | scenario_impact |
 
 ## 4. Output guard
 
@@ -170,3 +171,34 @@ Source: `outlook/`, see [agents.md](agents.md). A view is a direction, not a num
 | View cites neither an event nor a peer comparison | Confidence at most `medium` |
 | Driver or risk cites an event that `events.relevant` did not return, the previous outlook, or another date | The driver or risk is removed (gap) |
 | No valid view | The previous view is kept (gap), or no view (gap) |
+
+## 9. Scenarios
+
+Source: `scenarios/`, `runners/scenarios.py`, see [agents.md](agents.md). A scenario is stored text (id, name, premise, mirrored event, horizon in months, default 3). Two layers turn it into numbers; **code computes every figure a client sees, the model supplies judgment and prose only.**
+
+**Layer A, the shock vector** (once per scenario and date): the scenario analyst gives a best, likely and worst percentage move per *channel* over the horizon, citing evidence of the run. Channels are layered so that adding them never counts an exposure twice: a *market* channel is the move of an asset-class bucket (`equity_global|us|europe|japan|asia`, `rates_duration`, `gold`, `commodities_broad`, `real_estate`); an *overlay* is only the excess over its market channel (`sector_*` over the equity market, `credit_spreads` over rates); an *fx* channel (`fx_<ccy>`) is a non-USD currency against USD. The vocabulary is derived from the instruments in the data. There is no shipping sector in the data, so shipping is expressed through the industrials overlay.
+
+| Rule (code) | Effect |
+|---|---|
+| Move keyed to a single instrument, or to a channel no holding can reach | Removed (gap) |
+| Move citing no evidence of this run, evidence of another date, or a figure in its text that is neither in the cited evidence nor one of its moves | Removed (gap) |
+| Values not ordered worst <= likely <= best | Reordered by code (gap); status at most `partial` |
+| Anchoring event not returned by a tool of the run on or before `as_of` | Move kept as not anchored (gap); with no event the move says it is not anchored to history |
+| Channel of the data without a move | Gap; status `partial` |
+| Model failure or unusable output | Vector without channels, `insufficient_data`, gap naming the failure |
+
+**Layer B, the portfolio impact** (once per portfolio and scenario): each holding is mapped by rule to at most one market channel, the overlays its sector or credit quality call for, and one fx channel (the holding's currency against USD). A structured product follows its underlyings (equal shares for a basket, an assumption) and falls back to its own sector when they do not resolve. Cash reaches no market channel. A holding with no reaching channel is *untouched* (move 0, excluded from the reached share). Position move = sum over channels of share reached x channel value for the case; USD change = USD value x move; portfolio change = sum of position changes on `market_value_usd`. Best, likely and worst apply all best (likely, worst) channel values together: they bracket a central case, ignore diversification between channels and are not probabilities.
+
+| Output | Method |
+|---|---|
+| Mandate bands | Asset-class weights before and after on `market_value_base`, against the mandate band; only a class moving into or out of its band is listed. Custody portfolios have no bands. |
+| Lombard LTV | Collateral and lending value scale with the position moves; LTV is recomputed on the drawn amount with `credit_ltv`; breach when above the trigger; shortfall is the cure sale from `credit_ltv`, in USD when the facility currency is the base currency. |
+| Holdings the rules cannot place | Hedge funds, private credit, private equity and infrastructure, commodities other than gold or diversified, structured products without a resolvable underlying or sector: an agent may propose channels of the vector (never fx); a proposal outside the vector, for another holding or without a reason is dropped (gap) and the holding is untouched. |
+| Summary | Agent prose is accepted only when every figure equals a computed value (output-guard tolerance) and it does not call a gain a loss or the reverse; otherwise a summary built by code replaces it (gap). |
+| Missing vector, no holdings, policy denial | `insufficient_data` with gaps and no figures. |
+| Model failure | Figures stay (they come from code); the prose is built by code (gap); status `partial`. |
+
+**Roll-ups.** A client roll-up sums its portfolios' impacts (USD) and merges positions, bands and collateral. The RM roll-up sums the clients, ranks them by worst-case USD loss, lists clients with a likely gain, lists band and facility crossings per client, portfolio and case, and states coverage (`computed` of `total` clients and who is missing): a partial book is never presented as complete. Summaries follow the same figure check.
+
+**Cache.** Each stored result carries a hash. Vector: scenario text, horizon, mirrored event, market snapshot date and event ids, prompt version, model. Impact: the vector's inputs hash and content hash, the holdings, bands and facilities, prompt version, model. Roll-ups: the hashes of their members. A result with the same hash and no `--force` is not regenerated and costs no model call; an `insufficient_data` result is always retried.
+

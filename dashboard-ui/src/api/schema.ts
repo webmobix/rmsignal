@@ -327,6 +327,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scenarios/{scenario_id}/rollup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scenario Rollup */
+        get: operations["get_scenario_rollup_api_scenarios__scenario_id__rollup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -631,6 +648,34 @@ export interface components {
             cash_credit: components["schemas"]["CashCreditSection"];
             conversation: components["schemas"]["ConversationSection"];
         };
+        /** CaseImpact */
+        CaseImpact: {
+            /** Before Usd */
+            before_usd: number;
+            /** After Usd */
+            after_usd: number;
+            /** Delta Usd */
+            delta_usd: number;
+            /** Delta Pct */
+            delta_pct: number;
+            /**
+             * Bands
+             * @default []
+             */
+            bands: components["schemas"]["BandCrossing"][];
+            /**
+             * Collateral
+             * @default []
+             */
+            collateral: components["schemas"]["CollateralEffect"][];
+        };
+        /** CasePoint */
+        CasePoint: {
+            /** Move Pct */
+            move_pct: number;
+            /** Delta Usd */
+            delta_usd: number;
+        };
         /** CashCreditSection */
         CashCreditSection: {
             /** Gaps */
@@ -687,14 +732,37 @@ export interface components {
              */
             new_event_refs: string[];
         };
-        /** Channel */
-        Channel: {
+        /**
+         * ChannelMove
+         * @description Best, likely and worst move of one channel over the horizon, in percent. Worst <= likely <= best.
+         */
+        ChannelMove: {
             /** Channel */
             channel: string;
-            /** Pct */
-            pct: number;
-            /** Why */
-            why: string;
+            /** Best */
+            best: number;
+            /** Likely */
+            likely: number;
+            /** Worst */
+            worst: number;
+            /**
+             * Rationale
+             * @default
+             */
+            rationale: string;
+            /**
+             * Explainer
+             * @default
+             */
+            explainer: string;
+            /** Evidence Ids */
+            evidence_ids?: string[];
+            anchored_event?: components["schemas"]["EventRef"] | null;
+            /**
+             * Anchor Note
+             * @default
+             */
+            anchor_note: string;
         };
         /** Citation */
         Citation: {
@@ -737,6 +805,17 @@ export interface components {
             report_status: string;
             /** Report Summary */
             report_summary: string;
+        };
+        /** ClientLine */
+        ClientLine: {
+            /** Client Id */
+            client_id: string;
+            /** Before Usd */
+            before_usd: number;
+            /** Cases */
+            cases: {
+                [key: string]: components["schemas"]["Totals"];
+            };
         };
         /** ClientProfile */
         ClientProfile: {
@@ -859,6 +938,11 @@ export interface components {
         CollateralEffect: {
             /** Facility */
             facility: string;
+            /**
+             * Portfolio
+             * @default
+             */
+            portfolio: string;
             /** Ltv Before Pct */
             ltv_before_pct: number;
             /** Ltv After Pct */
@@ -965,6 +1049,39 @@ export interface components {
              * @default Client level: spans all of the client's portfolios, not only this one.
              */
             client_level_note: string;
+        };
+        /** Coverage */
+        Coverage: {
+            /** Computed */
+            computed: number;
+            /** Total */
+            total: number;
+            /**
+             * Missing
+             * @default []
+             */
+            missing: string[];
+        };
+        /** Crossing */
+        Crossing: {
+            /** Client Id */
+            client_id: string;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /**
+             * Case
+             * @enum {string}
+             */
+            case: "best" | "likely" | "worst";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "band" | "ltv";
+            /** Label */
+            label: string;
+            /** Detail */
+            detail: string;
         };
         /** EventInstrument */
         EventInstrument: {
@@ -1675,6 +1792,30 @@ export interface components {
             as_of: string;
             outlook?: components["schemas"]["MarketOutlook"] | null;
         };
+        /**
+         * MarketShock
+         * @description The scenario's shock vector: best, likely and worst move per market channel.
+         */
+        MarketShock: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "computed" | "partial" | "placeholder" | "insufficient_data";
+            /** Horizon Months */
+            horizon_months: number;
+            /** Summary */
+            summary: string;
+            /** Not A Probability */
+            not_a_probability: string;
+            /** Channels */
+            channels: components["schemas"]["ChannelMove"][];
+            /**
+             * Gaps
+             * @default []
+             */
+            gaps: components["schemas"]["Gap"][];
+        };
         /** MatchedEvent */
         MatchedEvent: {
             /**
@@ -1961,6 +2102,22 @@ export interface components {
             /** Facilities */
             facilities: components["schemas"]["Facility"][];
         };
+        /** PortfolioLine */
+        PortfolioLine: {
+            /** Portfolio Id */
+            portfolio_id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Before Usd */
+            before_usd: number;
+            /** Cases */
+            cases: {
+                [key: string]: components["schemas"]["Totals"];
+            };
+        };
         /** PortfolioRow */
         PortfolioRow: {
             /** Portfolio Id */
@@ -2049,6 +2206,64 @@ export interface components {
             /** Change Usd */
             change_usd: number;
         };
+        /**
+         * PositionChannel
+         * @description What one channel contributes to a position's move, in percent of the position, per case.
+         */
+        PositionChannel: {
+            /** Channel */
+            channel: string;
+            /** Best Pct */
+            best_pct: number;
+            /** Likely Pct */
+            likely_pct: number;
+            /** Worst Pct */
+            worst_pct: number;
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+            /**
+             * Agent Assigned
+             * @default false
+             */
+            agent_assigned: boolean;
+        };
+        /** PositionImpact */
+        PositionImpact: {
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Instrument Id */
+            instrument_id: string;
+            /** Instrument */
+            instrument: string;
+            /** Asset Class */
+            asset_class: string;
+            /** Value Usd */
+            value_usd: number;
+            /** Weight Pct */
+            weight_pct: number;
+            /**
+             * Mapping
+             * @enum {string}
+             */
+            mapping: "rule" | "look_through" | "agent" | "untouched";
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Moves */
+            moves: {
+                [key: string]: components["schemas"]["CasePoint"];
+            };
+            /**
+             * Channels
+             * @default []
+             */
+            channels: components["schemas"]["PositionChannel"][];
+        };
         /** PositionLimit */
         PositionLimit: {
             /** Max Single Position Pct */
@@ -2071,21 +2286,6 @@ export interface components {
              * @default
              */
             note: string;
-        };
-        /** PositionMove */
-        PositionMove: {
-            /** Instrument */
-            instrument: string;
-            /** Asset Class */
-            asset_class: string;
-            /** Weight Pct */
-            weight_pct: number;
-            /** Move Pct */
-            move_pct: number;
-            /** Delta Usd */
-            delta_usd: number;
-            /** Channels */
-            channels: components["schemas"]["Channel"][];
         };
         /** PricePoint */
         PricePoint: {
@@ -2212,8 +2412,17 @@ export interface components {
             mirrors: string;
             /** Caveat */
             caveat: string;
+            /**
+             * Horizon Months
+             * @default 3
+             */
+            horizon_months: number;
+            market?: components["schemas"]["MarketShock"] | null;
         };
-        /** ScenarioResult */
+        /**
+         * ScenarioResult
+         * @description One scenario for one client: three cases and what lies behind them.
+         */
         ScenarioResult: {
             /** Scenario Id */
             scenario_id: string;
@@ -2226,33 +2435,162 @@ export interface components {
             /** Caveat */
             caveat: string;
             /**
+             * Horizon Months
+             * @default 3
+             */
+            horizon_months: number;
+            market?: components["schemas"]["MarketShock"] | null;
+            /**
              * Status
              * @enum {string}
              */
-            status: "placeholder" | "computed";
+            status: "computed" | "partial" | "placeholder" | "insufficient_data";
             /**
              * Note
              * @default
              */
             note: string;
-            /** Before Usd */
+            /**
+             * Before Usd
+             * @default 0
+             */
             before_usd: number;
-            /** After Usd */
-            after_usd: number;
-            /** Delta Usd */
-            delta_usd: number;
-            /** Delta Pct */
-            delta_pct: number;
-            /** Reached Pct */
+            /**
+             * Cases
+             * @default {}
+             */
+            cases: {
+                [key: string]: components["schemas"]["CaseImpact"];
+            };
+            /**
+             * Reached Pct
+             * @default 0
+             */
             reached_pct: number;
-            /** Untouched Count */
+            /**
+             * Untouched Count
+             * @default 0
+             */
             untouched_count: number;
-            /** Collateral */
-            collateral: components["schemas"]["CollateralEffect"][];
-            /** Bands */
-            bands: components["schemas"]["BandCrossing"][];
-            /** Positions */
-            positions: components["schemas"]["PositionMove"][];
+            /**
+             * Positions
+             * @default []
+             */
+            positions: components["schemas"]["PositionImpact"][];
+            /**
+             * Portfolios
+             * @default []
+             */
+            portfolios: components["schemas"]["PortfolioLine"][];
+            /**
+             * @default {
+             *       "computed": 0,
+             *       "total": 0,
+             *       "missing": []
+             *     }
+             */
+            coverage: components["schemas"]["Coverage"];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Explainers
+             * @default {}
+             */
+            explainers: {
+                [key: string]: string;
+            };
+            /**
+             * Gaps
+             * @default []
+             */
+            gaps: components["schemas"]["Gap"][];
+        };
+        /**
+         * ScenarioRollup
+         * @description One scenario for the RM's book.
+         */
+        ScenarioRollup: {
+            /** Scenario Id */
+            scenario_id: string;
+            /** Name */
+            name: string;
+            /** Premise */
+            premise: string;
+            /** Mirrors */
+            mirrors: string;
+            /** Caveat */
+            caveat: string;
+            /**
+             * Horizon Months
+             * @default 3
+             */
+            horizon_months: number;
+            market?: components["schemas"]["MarketShock"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "computed" | "partial" | "placeholder" | "insufficient_data";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Rm Id */
+            rm_id?: string | null;
+            /**
+             * Before Usd
+             * @default 0
+             */
+            before_usd: number;
+            /**
+             * Cases
+             * @default {}
+             */
+            cases: {
+                [key: string]: components["schemas"]["Totals"];
+            };
+            /**
+             * Most Hit
+             * @default []
+             */
+            most_hit: components["schemas"]["ClientLine"][];
+            /**
+             * Beneficiaries
+             * @default []
+             */
+            beneficiaries: components["schemas"]["ClientLine"][];
+            /**
+             * Crossings
+             * @default []
+             */
+            crossings: components["schemas"]["Crossing"][];
+            /**
+             * @default {
+             *       "computed": 0,
+             *       "total": 0,
+             *       "missing": []
+             *     }
+             */
+            coverage: components["schemas"]["Coverage"];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Gaps
+             * @default []
+             */
+            gaps: components["schemas"]["Gap"][];
         };
         /**
          * SectorExposure
@@ -2508,6 +2846,17 @@ export interface components {
              * @default
              */
             evidence_id: string;
+        };
+        /** Totals */
+        Totals: {
+            /** Before Usd */
+            before_usd: number;
+            /** After Usd */
+            after_usd: number;
+            /** Delta Usd */
+            delta_usd: number;
+            /** Delta Pct */
+            delta_pct: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -3173,6 +3522,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClientScenarios"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scenario_rollup_api_scenarios__scenario_id__rollup_get: {
+        parameters: {
+            query?: {
+                /** @description ISO date or 'latest' */
+                as_of?: string;
+            };
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioRollup"];
                 };
             };
             /** @description Validation Error */
