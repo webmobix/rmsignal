@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ActionsRouteImport } from './routes/actions'
 import { Route as MarketRouteImport } from './routes/market'
+import { Route as ApiSplatRouteImport } from './routes/api/$'
 import { Route as ClientsIndexRouteImport } from './routes/clients.index'
 import { Route as ClientsClientIdRouteImport } from './routes/clients.$clientId'
 import { Route as InstrumentsIndexRouteImport } from './routes/instruments.index'
@@ -31,6 +32,11 @@ const ActionsRoute = ActionsRouteImport.update({
 const MarketRoute = MarketRouteImport.update({
   id: '/market',
   path: '/market',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSplatRoute = ApiSplatRouteImport.update({
+  id: '/api/$',
+  path: '/api/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ClientsIndexRoute = ClientsIndexRouteImport.update({
@@ -63,6 +69,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/actions': typeof ActionsRoute
   '/market': typeof MarketRoute
+  '/api/$': typeof ApiSplatRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/instruments/$instrumentId': typeof InstrumentsInstrumentIdRoute
   '/portfolios/$portfolioId': typeof PortfoliosPortfolioIdRoute
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/actions': typeof ActionsRoute
   '/market': typeof MarketRoute
+  '/api/$': typeof ApiSplatRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/instruments/$instrumentId': typeof InstrumentsInstrumentIdRoute
   '/portfolios/$portfolioId': typeof PortfoliosPortfolioIdRoute
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/actions': typeof ActionsRoute
   '/market': typeof MarketRoute
+  '/api/$': typeof ApiSplatRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/instruments/$instrumentId': typeof InstrumentsInstrumentIdRoute
   '/portfolios/$portfolioId': typeof PortfoliosPortfolioIdRoute
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/actions'
     | '/market'
+    | '/api/$'
     | '/clients/$clientId'
     | '/instruments/$instrumentId'
     | '/portfolios/$portfolioId'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/actions'
     | '/market'
+    | '/api/$'
     | '/clients/$clientId'
     | '/instruments/$instrumentId'
     | '/portfolios/$portfolioId'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/'
     | '/actions'
     | '/market'
+    | '/api/$'
     | '/clients/$clientId'
     | '/instruments/$instrumentId'
     | '/portfolios/$portfolioId'
@@ -127,6 +139,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActionsRoute: typeof ActionsRoute
   MarketRoute: typeof MarketRoute
+  ApiSplatRoute: typeof ApiSplatRoute
   ClientsClientIdRoute: typeof ClientsClientIdRoute
   InstrumentsInstrumentIdRoute: typeof InstrumentsInstrumentIdRoute
   PortfoliosPortfolioIdRoute: typeof PortfoliosPortfolioIdRoute
@@ -155,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/market'
       fullPath: '/market'
       preLoaderRoute: typeof MarketRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/$': {
+      id: '/api/$'
+      path: '/api/$'
+      fullPath: '/api/$'
+      preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/clients/': {
@@ -199,6 +219,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActionsRoute: ActionsRoute,
   MarketRoute: MarketRoute,
+  ApiSplatRoute: ApiSplatRoute,
   ClientsClientIdRoute: ClientsClientIdRoute,
   InstrumentsInstrumentIdRoute: InstrumentsInstrumentIdRoute,
   PortfoliosPortfolioIdRoute: PortfoliosPortfolioIdRoute,
