@@ -29,8 +29,8 @@ def main(argv: list[str] | None = None) -> None:
         "--reports", default=None,
         help="folder holding artifacts.db (older form of --artifact-store; $RM_DASHBOARD_REPORTS)",
     )
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"), help="bind address (default: $HOST, else 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8000)), help="port (default: $PORT, which Cloud Run sets, else 8000)")
     args = parser.parse_args(argv)
     data_source = args.data_source or os.environ.get("RM_DATA_SOURCE") or args.db
     if not data_source:
