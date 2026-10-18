@@ -313,7 +313,9 @@ every instrument. `audit.jsonl` is append-only across runs. A failure of one ins
 ## Models
 
 `build_model(settings)` returns `ChatOpenAI` for any OpenAI-compatible gateway (`RM_GATEWAY_URL`,
-`RM_GATEWAY_API_KEY`, `RM_MODEL_NAME`). `RM_MODEL_NAME=stub` selects `StubChatModel`, a deterministic scripted
+`RM_GATEWAY_API_KEY`, `RM_MODEL_NAME`), or `ChatGoogleGenerativeAI` on Vertex AI when `RM_MODEL_PROVIDER=vertex`
+(`RM_VERTEX_PROJECT`, `RM_VERTEX_LOCATION`, Google application default credentials; needs `uv sync --extra vertex`).
+Gemini returns message content as blocks, so final answers are read with `AIMessage.text`. `RM_MODEL_NAME=stub` selects `StubChatModel`, a deterministic scripted
 model with failure modes (`uncited_number`, `raise`) used by the tests and the default batch run. Agent logic names no provider.
 
 ## Interactive use

@@ -99,8 +99,8 @@ def _child_runner(role: str, parent: RunScope, models: ModelFactory, requester: 
 
 def _last_text(state: dict) -> str:
     for m in reversed(state.get("messages", [])):
-        if isinstance(m.content, str) and m.content:
-            return m.content
+        if m.text:  # text of string or block content (Gemini returns blocks)
+            return m.text
     return ""
 
 
@@ -139,8 +139,8 @@ def analyse(role: str, subject: str, scope: RunScope, models: ModelFactory, *, r
 
 def _final_text(out: dict) -> str:
     for m in reversed(out.get("messages", [])):
-        if isinstance(m, AIMessage) and isinstance(m.content, str) and m.content.strip() and not m.tool_calls:
-            return m.content
+        if isinstance(m, AIMessage) and m.text.strip() and not m.tool_calls:
+            return m.text
     return ""
 
 

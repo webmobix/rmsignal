@@ -10,6 +10,11 @@ class Settings:
     gateway_url: str = "http://localhost:4000/v1"
     gateway_api_key: str = "not-set"
     model_name: str = "stub"
+    model_provider: str = "gateway"
+    """``gateway`` (OpenAI-compatible endpoint) or ``vertex`` (Gemini on Vertex AI, Google application default credentials)."""
+    vertex_project: str | None = None
+    """Vertex AI project; default: ``GOOGLE_CLOUD_PROJECT``, else the project of the Google credentials."""
+    vertex_location: str = "global"
     horizon_days: int = 365
     max_concurrency: int = 2
     data_source: str | None = None
@@ -31,6 +36,9 @@ class Settings:
             gateway_url=e.get("RM_GATEWAY_URL", d.gateway_url),
             gateway_api_key=e.get("RM_GATEWAY_API_KEY", d.gateway_api_key),
             model_name=e.get("RM_MODEL_NAME", d.model_name),
+            model_provider=e.get("RM_MODEL_PROVIDER", d.model_provider),
+            vertex_project=e.get("RM_VERTEX_PROJECT") or e.get("GOOGLE_CLOUD_PROJECT") or d.vertex_project,
+            vertex_location=e.get("RM_VERTEX_LOCATION", d.vertex_location),
             horizon_days=int(e.get("RM_HORIZON_DAYS", d.horizon_days)),
             max_concurrency=int(e.get("RM_MAX_CONCURRENCY", d.max_concurrency)),
             data_source=e.get("RM_DATA_SOURCE", d.data_source),

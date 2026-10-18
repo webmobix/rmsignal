@@ -60,11 +60,15 @@ The same agents SHALL be usable in an interactive session identified by a thread
 - **THEN** the agent uses earlier evidence of that thread and keeps the original `as_of` unless changed explicitly
 
 ### Requirement: Provider-neutral model access
-Models SHALL be accessed through a configurable gateway endpoint and model name, with no provider-specific behaviour in agent logic.
+Models SHALL be accessed through a configurable provider (an OpenAI-compatible gateway endpoint, or Gemini on Vertex AI) and model name, with no provider-specific behaviour in agent logic. Tool names, structured outputs and guard behaviour SHALL be the same for every provider.
 
 #### Scenario: Swap model
 - **WHEN** the configured model name changes
 - **THEN** agents run unchanged
+
+#### Scenario: Swap provider
+- **WHEN** the configured provider changes between `gateway` and `vertex`
+- **THEN** agents, tools, prompts and output guards run unchanged
 
 ### Requirement: Events are valid reasons
 Agents SHALL treat events and news returned by tools as established facts, SHALL use them to explain market and price movements, SHALL cite them as evidence and SHALL weigh their stated severity. Agents SHALL NOT attribute a movement to an event that no tool returned.

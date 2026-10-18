@@ -1,9 +1,9 @@
 """Firestore artifact store: one flat collection, document id ``"{as_of}|{kind}|{key}"`` (``/`` and ``%`` percent-encoded, as an
 id cannot contain a slash), the body kept as JSON text so Firestore's map, NaN and field-name rules never apply to it.
 
-Runners get a read-only store: saving or deleting raises ``ReadOnlyStore`` naming the loader. ``rm-dashboard-load`` opens the same
-class writable. Listing keys is a range query on the document id, so it needs no composite index; the dates come from marker
-documents in the ``runs`` collection, which the loader writes once a date's artifacts are in."""
+A store opened read-only (the API's) refuses saving and deleting with ``ReadOnlyStore``; runners and ``rm-dashboard-load`` open it
+writable. Listing keys is a range query on the document id, so it needs no composite index; the dates come from marker documents
+in the ``runs`` collection, which a writable store sets after the first commit that holds a date's artifacts."""
 
 from collections.abc import Iterable
 from datetime import date
@@ -20,8 +20,8 @@ BATCH_BYTES = 8 * 1024 * 1024
 """Bytes per commit: Firestore allows 10 MiB."""
 MAX_BODY = 1_000_000
 """A document is limited to 1 MiB including its name and fields."""
-READ_ONLY = ("the Firestore backend is read-only for runners: publish artifacts with "
-             "`rm-dashboard-load artifacts --to firestore:<project>` and run the stages against SQLite")
+READ_ONLY = ("this Firestore artifact store was opened read-only: runners and `rm-dashboard-load` open it writable, "
+             "the API does not")
 _ESCAPES = {"%": "%25", "/": "%2F"}
 
 
@@ -40,6 +40,7 @@ class FirestoreArtifactStore:
         self.runs = runs
         self.writable = writable
         self._location = location or f"firestore:{getattr(client, 'project', '')}"
+        self._marked: set[date] = set()
 
     @property
     def location(self) -> str:
@@ -81,16 +82,18 @@ class FirestoreArtifactStore:
     def dates(self) -> list[date]:
         return sorted(date.fromisoformat(d.id) for d in self.client.collection(self.runs).stream() if d.id != GLOBAL.isoformat())
 
-    # ---- writing (the loader only) ------------------------------------------------------------------
+    # ---- writing (runners and the loader) ------------------------------------------------------------------
     def put(self, as_of: date, kind: Kind, key: str, body: str) -> None:
         self.put_many([Artifact(as_of, kind, key, body)])
 
     def put_many(self, items: Iterable[Artifact]) -> None:
         """Written in commits of at most ``BATCH_OPS`` operations and ``BATCH_BYTES`` bytes. Not atomic across commits: the loader
-        writes evidence before what cites it and is repeatable."""
+        writes evidence before what cites it and is repeatable. Each date written is marked in ``runs`` (once per store)."""
         self.require_writable()
         batch, ops, size = self.client.batch(), 0, 0
+        dates: set[date] = set()
         for a in items:
+            dates.add(a.as_of)
             if len(a.body.encode()) > MAX_BODY:
                 raise ValueError(f"artifact {a.kind} {a.key} of {a.as_of} is {len(a.body.encode())} bytes: over the Firestore document limit")
             if ops >= BATCH_OPS or size + len(a.body) > BATCH_BYTES:
@@ -101,11 +104,14 @@ class FirestoreArtifactStore:
             ops, size = ops + 1, size + len(a.body)
         if ops:
             batch.commit()
+        for d in sorted(dates - self._marked - {GLOBAL}):
+            self.mark_run(d)
 
     def mark_run(self, as_of: date) -> None:
         """Record that ``as_of`` has artifacts: ``dates()`` lists only the dates marked."""
         self.require_writable()
         self.client.collection(self.runs).document(as_of.isoformat()).set({"as_of": as_of.isoformat()})
+        self._marked.add(as_of)
 
     def delete_prefix(self, as_of: date, kind: Kind, prefix: str = "") -> int:
         self.require_writable()
@@ -120,6 +126,7 @@ class FirestoreArtifactStore:
     def unmark_run(self, as_of: date) -> None:
         self.require_writable()
         self.client.collection(self.runs).document(as_of.isoformat()).delete()
+        self._marked.discard(as_of)
 
 
 def open_firestore_store(location: str, *, writable: bool = False) -> FirestoreArtifactStore:

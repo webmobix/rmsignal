@@ -19,9 +19,9 @@ def add_store_args(p: argparse.ArgumentParser, *, legacy: str = "--reports-dir")
 
 
 def store_from_args(args: argparse.Namespace, settings: Settings) -> ArtifactStore:
-    """Flag, then the older folder flag, then ``RM_ARTIFACT_STORE``, then the default. Raises ValueError for an unknown backend or a
-    backend that is read-only for runners (before anything is read or any model is called), ImportError without the client library."""
-    store = open_store(args.artifact_store or args.legacy_dir or settings.artifact_store)
+    """Flag, then the older folder flag, then ``RM_ARTIFACT_STORE``, then the default; Firestore is opened writable. Raises ValueError
+    for an unknown backend (before anything is read or any model is called), ImportError without the client library."""
+    store = open_store(args.artifact_store or args.legacy_dir or settings.artifact_store, writable=True)
     check_writable(store)
     return store
 

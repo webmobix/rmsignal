@@ -9,13 +9,17 @@ WORKDIR /app
 
 # deps first, for layer caching
 COPY pyproject.toml uv.lock .python-version README.md ./
-RUN uv sync --frozen --no-dev --extra firestore --no-install-project
+RUN uv sync --frozen --no-dev --extra firestore --extra vertex --no-install-project
 
 COPY src ./src
-RUN uv sync --frozen --no-dev --extra firestore
+RUN uv sync --frozen --no-dev --extra firestore --extra vertex
 
 ENV PATH="/opt/venv/bin:$PATH" UV_NO_SYNC=1
 ENV HOST=0.0.0.0
+
+# Model: Gemini on Vertex AI via the runtime service account; override per service with --set-env-vars.
+ENV RM_MODEL_PROVIDER=vertex
+ENV RM_MODEL_NAME=gemini-3.8-flash
 ENV PORT=8080
 
 # Script or command to run: build arg sets the default, a runtime env var overrides it.

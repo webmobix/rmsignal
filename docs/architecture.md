@@ -40,8 +40,8 @@ The four setups:
 - **Deterministic code.** No model decides content, order or links.
 - **Mock.** A stand-in that returns scripted answers and says so in the evidence.
 
-The model itself is the same everywhere: `build_model(settings)` gives a gateway model, or the scripted `StubChatModel`
-when `RM_MODEL_NAME=stub`, which is the default (see section 6).
+The model itself is the same everywhere: `build_model(settings)` gives a gateway model or a Gemini model on Vertex AI (`RM_MODEL_PROVIDER`), or the scripted
+`StubChatModel` when `RM_MODEL_NAME=stub`, which is the default (see section 6).
 
 ### 1.2 The landscape
 
@@ -620,6 +620,10 @@ sequenceDiagram
 ### 6.3 Models
 
 All model-backed roles take their model from `build_model(settings, role=...)`. `RM_MODEL_NAME=stub` (the default)
-selects `StubChatModel`, a scripted model with a plan per role; any other name is sent to the OpenAI-compatible gateway at
-`RM_GATEWAY_URL`. The stub applies to every model-backed role at once. The KYC peer does not use a model and is a mock
+selects `StubChatModel`, a scripted model with a plan per role; any other name goes to the provider in `RM_MODEL_PROVIDER`:
+`gateway` (default) sends it to the OpenAI-compatible endpoint at `RM_GATEWAY_URL`; `vertex` calls that Gemini model on
+Vertex AI with Google application default credentials (the service account on Cloud Run, `gcloud auth application-default
+login` locally), in `RM_VERTEX_PROJECT` (else `GOOGLE_CLOUD_PROJECT`, else the credentials' project) and
+`RM_VERTEX_LOCATION` (default `global`). An unknown provider, a missing `vertex` extra or missing credentials fail when
+the model is built, naming the fix. The stub applies to every model-backed role at once. The KYC peer does not use a model and is a mock
 whichever model is configured, so a real model changes the analysts' wording and findings but not the KYC answer.

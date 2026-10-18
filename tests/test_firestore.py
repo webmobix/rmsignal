@@ -248,10 +248,10 @@ def test_saving_or_deleting_is_refused_naming_the_loader_and_changes_nothing(rea
     assert before == {k: dict(v) for k, v in getattr(client, "data", {}).items()}
 
 
-def test_a_runner_pointed_at_firestore_fails_before_any_model_call(seeded_db, capsys, monkeypatch):
+def test_a_runner_given_a_read_only_firestore_store_fails_before_any_model_call(seeded_db):
     from rm_dashboard.agents import StubChatModel
     from rm_dashboard.runners import open_registry
-    from rm_dashboard.runners.reconcile import main, run_reconcile
+    from rm_dashboard.runners.reconcile import run_reconcile
     from rm_dashboard.settings import Settings
 
     made = []
@@ -263,12 +263,24 @@ def test_a_runner_pointed_at_firestore_fails_before_any_model_call(seeded_db, ca
     client = new_client(FIRESTORE[-1])
     with patched_client(client):
         with open_registry(Settings(db_path=str(seeded_db)), with_peer=False) as reg:
-            with pytest.raises(ReadOnlyStore, match="rm-dashboard-load"):
+            with pytest.raises(ReadOnlyStore, match="read-only"):
                 run_reconcile(reg, as_of=D, store=open_store("firestore:demo"), client_ids=["CL-0001"], models=models)
+    assert made == []
+
+
+def test_a_runner_writes_its_artifacts_to_firestore_and_marks_the_date(seeded_db, monkeypatch):
+    from rm_dashboard.runners.analyse import main
+
+    client = new_client(FIRESTORE[-1])
+    with patched_client(client):
         monkeypatch.delenv("RM_DASHBOARD_DB", raising=False)
-        assert main(["--as-of", "2026-08-26", "--db", str(seeded_db), "--artifact-store", "firestore:demo"]) == 2
-    err = capsys.readouterr().err
-    assert made == [] and "rm-dashboard-load" in err
+        monkeypatch.setenv("RM_MODEL_NAME", "stub")
+        assert main(["--as-of", "2026-08-26", "--db", str(seeded_db), "--clients", "CL-0001",
+                     "--artifact-store", "firestore:demo"]) == 0
+        written = open_store("firestore:demo", writable=False)
+        assert written.dates() == [D]
+        assert written.keys(D, Kind.REPORT) == ["CL-0001"]
+        assert written.keys(D, Kind.AUDIT, "analyse/") and written.get(D, Kind.RUN_SUMMARY, "analyse")
 
 
 def test_the_api_reads_artifacts_and_source_data_from_firestore_like_from_sqlite(seeded_db, scenario_reports, tmp_path):

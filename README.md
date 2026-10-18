@@ -101,19 +101,22 @@ An unknown backend name fails at start-up and lists the valid ones (`sqlite`, `f
 
 ### Demo on Firestore
 
-For a demo server, the source data and the generated artifacts live in Firestore. The runners still write locally (to SQLite);
-`rm-dashboard-load` publishes what they produced, and the server reads from Firestore. Firestore is read-only for runners: pointing
-one at `firestore:...` fails at start-up, before any model call, and names the loader.
+For a demo or cloud server, the source data and the generated artifacts live in Firestore. Runners read the source data from it and
+write their artifacts to it directly (`RM_DATA_SOURCE` and `RM_ARTIFACT_STORE` = `firestore:<project>`); the API only reads. Run
+and deploy them as in [docs/deploy-cloud-run.md](docs/deploy-cloud-run.md). `rm-dashboard-load` loads the dataset and copies older
+SQLite stores or `reports/` folders into Firestore.
 
 ```sh
 uv sync --extra firestore                       # the Firestore client library is an optional extra
 export GOOGLE_CLOUD_PROJECT=my-demo-project     # credentials: Application Default Credentials (`gcloud auth application-default login`)
                                                 # or the emulator: `export FIRESTORE_EMULATOR_HOST=localhost:8080`
 
-# 1. generate locally, as above (seed, outlook, analyse, reconcile, mandate-reconcile, actions, overview, scenarios)
-# 2. publish the source data and the artifacts
+# 1. load the source data
 uv run rm-dashboard-load source --to firestore:my-demo-project [--replace]
-uv run rm-dashboard-load artifacts --from sqlite:reports/artifacts.db --to firestore:my-demo-project [--as-of 2026-08-26] [--replace]
+# 2. run the stages against Firestore (outlook, analyse, reconcile, mandate-reconcile, actions, overview, scenarios)
+export RM_DATA_SOURCE=firestore:my-demo-project RM_ARTIFACT_STORE=firestore:my-demo-project
+uv run rm-dashboard-outlook --as-of 2026-08-26      # ... then the others, in this order
+# (or copy runs already made locally: rm-dashboard-load artifacts --from sqlite:reports/artifacts.db --to firestore:my-demo-project)
 # 3. start the server on Firestore
 RM_DATA_SOURCE=firestore:my-demo-project RM_ARTIFACT_STORE=firestore:my-demo-project uv run rm-dashboard-serve
 ```
@@ -128,6 +131,8 @@ catalogue goes with a full copy or with `--catalogue`. `uv run rm-dashboard-load
 document nears Firestore's 1 MiB limit). Firestore layout: a collection per source table (document id = primary key, `row-<n>` for
 tables without one, `_seq` for file order); one `artifacts` collection with id `<as-of>|<kind>|<key>` and the body as JSON text; a
 `runs` collection with one marker per date.
+
+Deploying the API and running the pipeline as a Cloud Run job: [docs/deploy-cloud-run.md](docs/deploy-cloud-run.md).
 
 ### Reconcile RM notes
 
@@ -215,10 +220,23 @@ export RM_MODEL_NAME=<model> RM_GATEWAY_URL=https://gateway.example/v1 RM_GATEWA
 uv run rm-dashboard-analyse --as-of 2026-08-26 --db rm.db --clients CL-0001
 ```
 
+For Gemini on Vertex AI, locally (sign in once with `gcloud auth application-default login`):
+
+```sh
+uv sync --extra vertex
+export RM_MODEL_PROVIDER=vertex RM_MODEL_NAME=gemini-2.5-flash RM_VERTEX_PROJECT=<project>
+uv run rm-dashboard-analyse --as-of 2026-08-26 --db rm.db --clients CL-0001
+```
+
+On Cloud Run the image already includes the extra. Enable the Vertex AI API, give the service account the *Vertex AI User*
+role, and set `RM_MODEL_PROVIDER=vertex` and `RM_MODEL_NAME` on the service; no key is needed.
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `RM_DASHBOARD_DB` | none | seeded database |
-| `RM_MODEL_NAME` | `stub` | gateway model name; `stub` = deterministic test model |
+| `RM_MODEL_NAME` | `stub` | model name (gateway model or Gemini id); `stub` = deterministic test model |
+| `RM_MODEL_PROVIDER` | `gateway` | `gateway` or `vertex` |
+| `RM_VERTEX_PROJECT` / `RM_VERTEX_LOCATION` | `GOOGLE_CLOUD_PROJECT` or credentials' project / `global` | Vertex AI project and location |
 | `RM_GATEWAY_URL` / `RM_GATEWAY_API_KEY` | `http://localhost:4000/v1` / `not-set` | OpenAI-compatible endpoint |
 | `RM_HORIZON_DAYS` | `365` | liquidity look-ahead horizon |
 | `RM_MAX_CONCURRENCY` | `4` | clients analysed in parallel |

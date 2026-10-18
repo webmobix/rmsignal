@@ -87,6 +87,68 @@ def test_gateway_swap_model_name_needs_no_code_change(make_scope):
     assert "openai" not in src.lower() and "anthropic" not in src.lower()
 
 
+def _fake_creds(project="creds-proj"):
+    from google.oauth2.credentials import Credentials
+    return lambda: (Credentials(token="t"), project)
+
+
+def test_vertex_provider_builds_gemini(make_scope):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    s = Settings(model_name="gemini-flash-x", model_provider="vertex", vertex_location="europe-west1")
+    m = build_model(s, credentials=_fake_creds())
+    assert isinstance(m, ChatGoogleGenerativeAI) and m.model == "gemini-flash-x"
+    assert m.project == "creds-proj" and m.location == "europe-west1" and m.vertexai
+    assert build_model(Settings(model_name="g", model_provider="vertex", vertex_project="p"), credentials=_fake_creds()).project == "p"
+    # stub wins and never looks up credentials
+    def boom():
+        raise AssertionError("credentials looked up")
+    assert isinstance(build_model(Settings(model_name="stub", model_provider="vertex"), credentials=boom), StubChatModel)
+
+
+def test_vertex_and_provider_misconfiguration_fail_early():
+    with pytest.raises(ValueError, match="gateway, vertex"):
+        build_model(Settings(model_name="m", model_provider="nope"))
+    def none():
+        raise RuntimeError("no creds")
+    with pytest.raises(RuntimeError, match="application-default login"):
+        build_model(Settings(model_name="m", model_provider="vertex"), credentials=none)
+    with pytest.raises(RuntimeError, match="RM_VERTEX_PROJECT"):
+        build_model(Settings(model_name="m", model_provider="vertex"), credentials=_fake_creds(None))
+
+
+def test_vertex_missing_extra(monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules, "langchain_google_genai", None)
+    with pytest.raises(RuntimeError, match="uv sync --extra vertex"):
+        build_model(Settings(model_name="m", model_provider="vertex"), credentials=_fake_creds())
+
+
+def test_settings_vertex_env():
+    assert Settings.from_env({}).model_provider == "gateway" and Settings.from_env({}).vertex_location == "global"
+    s = Settings.from_env({"RM_MODEL_PROVIDER": "vertex", "GOOGLE_CLOUD_PROJECT": "g", "RM_VERTEX_LOCATION": "eu"})
+    assert (s.model_provider, s.vertex_project, s.vertex_location) == ("vertex", "g", "eu")
+    assert Settings.from_env({"RM_VERTEX_PROJECT": "r", "GOOGLE_CLOUD_PROJECT": "g"}).vertex_project == "r"
+
+
+def test_final_text_reads_block_content():
+    from langchain_core.messages import AIMessage
+    from rm_dashboard.agents.analyst import _final_text, _last_text
+    out = {"messages": [AIMessage(content=[{"type": "text", "text": '{"a": 1}'}])]}
+    assert _final_text(out) == '{"a": 1}' and _last_text(out) == '{"a": 1}'
+
+
+def test_llm_logger_records_gemini_shaped_usage():
+    import uuid
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+    from rm_dashboard.llmlog import LlmCallLogger
+    lg, rid = LlmCallLogger("analyse"), uuid.uuid4()
+    lg.on_chat_model_start({}, [[]], run_id=rid)
+    msg = AIMessage("x", usage_metadata={"input_tokens": 5, "output_tokens": 3, "total_tokens": 8})
+    lg.on_llm_end(LLMResult(generations=[[ChatGeneration(message=msg)]]), run_id=rid)
+    assert lg.stats.summary()["calls"] == 1 and lg.stats.summary().get("failed", 0) == 0
+
+
 # ---- 7.2 instrument analyst ---------------------------------------------------------------
 def test_instrument_analyst_returns_valid_report(make_scope):
     r, scope, _ = run_role(make_scope, "instrument_analyst", "SYN-AL-0308")

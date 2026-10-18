@@ -22,6 +22,9 @@ dependencies = [
 firestore = [
     "google-cloud-firestore>=2.19.0",
 ]
+vertex = [
+    "langchain-google-genai>=4.0.0",
+]
 
 [project.scripts]
 rm-dashboard = "rm_dashboard:main"

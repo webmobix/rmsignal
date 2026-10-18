@@ -1529,6 +1529,9 @@ dependencies = [
 firestore = [
     { name = "google-cloud-firestore" },
 ]
+vertex = [
+    { name = "langchain-google-genai" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1543,13 +1546,14 @@ requires-dist = [
     { name = "deepagents", specifier = "==0.7.25" },
     { name = "fastapi", specifier = ">=0.143.0" },
     { name = "google-cloud-firestore", marker = "extra == 'firestore'", specifier = ">=2.19.0" },
+    { name = "langchain-google-genai", marker = "extra == 'vertex'", specifier = ">=4.0.0" },
     { name = "langchain-openai", specifier = ">=1.7.2" },
     { name = "langgraph", specifier = "==1.2.15" },
     { name = "polars", specifier = ">=2.0.0" },
     { name = "pydantic", specifier = ">=2.14.1" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
-provides-extras = ["firestore"]
+provides-extras = ["firestore", "vertex"]
 
 [package.metadata.requires-dev]
 dev = [

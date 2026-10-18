@@ -16,8 +16,9 @@ def sqlite_path(location: str | Path) -> Path:
     return p if p.suffix in (".db", ".sqlite", ".sqlite3") else p / FILE_NAME
 
 
-def open_store(spec: str | Path | None = None) -> ArtifactStore:
-    """The artifact store named by ``spec``. A bare path is the SQLite folder form. Raises ValueError for an unknown backend."""
+def open_store(spec: str | Path | None = None, *, writable: bool = False) -> ArtifactStore:
+    """The artifact store named by ``spec``. A bare path is the SQLite folder form. SQLite stores always accept writes; a Firestore
+    store does only with ``writable`` (runners, the loader), so the API cannot change artifacts. Raises ValueError for an unknown backend."""
     if spec is None or str(spec) == "":
         spec = DEFAULT_SPEC
     text = str(spec)
@@ -32,7 +33,7 @@ def open_store(spec: str | Path | None = None) -> ArtifactStore:
     if backend == "firestore":
         from .firestore import open_firestore_store  # lazy: the Firestore client library is optional
 
-        return open_firestore_store(rest)
+        return open_firestore_store(rest, writable=writable)
     raise ValueError(f"unknown artifact backend {backend!r}; valid backends: {', '.join(BACKENDS)}")
 
 
