@@ -318,3 +318,7 @@ code; a model supplies the market judgment, places the few holdings the rules ca
 against the computed figures. Cases are conditional on the scenario and are not probabilities. A result is rewritten only when its
 inputs change (scenario text, market data, holdings, model); a rerun resumes after an interruption. It is independent of the other
 stages and read by `GET /api/scenarios`. See [docs/methods.md](docs/methods.md) section 9.
+
+## License
+
+Copyright (c) 2026 Webmobix Solutions AG. All rights reserved. See [LICENSE](LICENSE).

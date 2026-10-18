@@ -1,6 +1,7 @@
 {
   "name": "dashboard-ui",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "imports": {
     "#/*": "./src/*"
