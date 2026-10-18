@@ -1,9 +1,9 @@
 import dataclasses
-import json
 from datetime import date
 
 import polars as pl
 import pytest
+from storehelp import snapshot
 
 from rm_dashboard.agents import StubChatModel
 from rm_dashboard.agents.stub import StubModelError
@@ -13,6 +13,9 @@ from rm_dashboard.outlook.store import OutlookStore
 from rm_dashboard.runners import open_registry
 from rm_dashboard.runners.outlook import main, run_outlook
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import Kind
+from rm_dashboard.store.audit import read_audit
+from rm_dashboard.store.summary import get_summary
 from rm_dashboard.tools import ToolRegistry
 
 AS_OF = date(2026, 8, 26)
@@ -66,11 +69,7 @@ class Trimmed:
 
 def stage(reg, tmp_path, as_of=AS_OF, models=None, **kw):
     models = models or Models()
-    return run_outlook(reg, as_of=as_of, reports_dir=tmp_path, models=models, **kw), models
-
-
-def files(d):
-    return {str(p.relative_to(d)): p.read_bytes() for p in sorted(d.rglob("*")) if p.is_file()}
+    return run_outlook(reg, as_of=as_of, store=tmp_path, models=models, **kw), models
 
 
 # ---- 3.1 which instruments --------------------------------------------------------------------
@@ -87,7 +86,7 @@ def test_only_held_instruments_get_an_outlook(reg, tmp_path):
     res, _ = stage(trimmed, tmp_path)
     assert sorted(res.instruments) == sorted(keep)
     assert OutlookStore(tmp_path).instrument_ids(AS_OF) == sorted(keep)
-    assert not (res.out_dir / "instruments" / "SYN-EQ-0003.json").exists()
+    assert OutlookStore(tmp_path).load_instrument(AS_OF, "SYN-EQ-0003") is None
 
 
 def test_an_explicit_list_overrides_the_held_set(reg, tmp_path):
@@ -96,31 +95,31 @@ def test_an_explicit_list_overrides_the_held_set(reg, tmp_path):
 
 
 # ---- 3.2 fingerprint, carry-forward, skip -------------------------------------------------------
-def test_full_stage_writes_one_file_per_instrument(reg, tmp_path):
+def test_full_stage_saves_one_outlook_per_instrument(reg, tmp_path):
     res, models = stage(reg, tmp_path)
-    d = res.out_dir
-    assert len(res.instruments) == 62 and len(list((d / "instruments").glob("*.json"))) == 62
-    assert len(list((d / "evidence" / "instruments").glob("*.json"))) == 62
+    store = OutlookStore(tmp_path)
+    assert len(res.instruments) == 62 and len(store.instrument_ids(AS_OF)) == 62
+    assert len(store.store.keys(AS_OF, Kind.EVIDENCE_INDEX, "outlook-instrument/")) == 62
     for iid, o in res.instruments.items():
-        assert InstrumentOutlook.model_validate_json((d / "instruments" / f"{iid}.json").read_text()) == o
+        assert store.load_instrument(AS_OF, iid) == o
         assert o.subject == iid and o.status in ("complete", "partial") and o.view is not None
-    s = json.loads((d / "summary.json").read_text())
+    s = get_summary(store.store, AS_OF, "outlook")
     assert s["instruments"]["count"] == 62 and sum(s["instruments"]["status_counts"].values()) == 62
     assert set(s["instruments"]["detail"]) == set(res.instruments) and s["market"]["views"] == 6
-    assert (d / "audit.jsonl").read_text().strip()
+    assert read_audit(store.store, AS_OF, "outlook")
 
 
 def test_rerun_with_the_same_inputs_calls_no_model_and_changes_nothing(reg, tmp_path):
     res, _ = stage(reg, tmp_path)
-    before = files(res.out_dir)
+    before = snapshot(tmp_path)
     again, models = stage(reg, tmp_path)
     assert models.calls == 0 and again.untouched and len(again.instruments_skipped) == 62
-    assert files(res.out_dir) == before
+    assert snapshot(tmp_path) == before
 
 
 def test_two_portfolios_holding_the_instrument_give_one_outlook(reg, tmp_path):
     res, _ = stage(reg, tmp_path, instrument_ids=["SYN-EQ-0001"])
-    assert [p.name for p in (res.out_dir / "instruments").glob("*.json")] == ["SYN-EQ-0001.json"]
+    assert OutlookStore(tmp_path).instrument_ids(AS_OF) == ["SYN-EQ-0001"]
 
 
 def test_a_new_relevant_event_regenerates_only_the_affected_instruments(reg, tmp_path):
@@ -151,9 +150,11 @@ def test_force_regenerates_everything(reg, tmp_path):
 
 def test_the_audit_trail_only_grows(reg, tmp_path):
     res, _ = stage(reg, tmp_path, instrument_ids=["SYN-EQ-0001"])
-    n = len((res.out_dir / "audit.jsonl").read_text().splitlines())
+    store = OutlookStore(tmp_path).store
+    first = read_audit(store, AS_OF, "outlook")
     stage(reg, tmp_path, instrument_ids=["SYN-EQ-0001"], force=True)
-    assert len((res.out_dir / "audit.jsonl").read_text().splitlines()) > n
+    later = read_audit(store, AS_OF, "outlook")
+    assert len(later) > len(first) and later[:len(first)] == first and [r["seq"] for r in later] == list(range(1, len(later) + 1))
 
 
 # ---- 3.3 isolation and persistence ----------------------------------------------------------------
@@ -163,38 +164,36 @@ def test_one_failing_instrument_does_not_affect_the_others(reg, tmp_path):
     assert any(g.kind == "agent_error" for g in res.instruments["SYN-EQ-0003"].gaps)
     for ok in ("SYN-EQ-0001", "SYN-EQ-0004"):
         assert res.instruments[ok].status == "complete" and res.instruments[ok].view is not None
-    s = json.loads((res.out_dir / "summary.json").read_text())["instruments"]["detail"]
+    s = get_summary(OutlookStore(tmp_path).store, AS_OF, "outlook")["instruments"]["detail"]
     assert {i: d["status"] for i, d in s.items()} == {"SYN-EQ-0001": "complete", "SYN-EQ-0003": "partial", "SYN-EQ-0004": "complete"}
-    assert (res.out_dir / "instruments" / "SYN-EQ-0003.json").is_file()
+    assert OutlookStore(tmp_path).load_instrument(AS_OF, "SYN-EQ-0003") is not None
 
 
-def test_every_cited_evidence_id_resolves_in_each_instrument_evidence_file(reg, tmp_path):
-    from rm_dashboard.domain import ToolResult
-
+def test_every_cited_evidence_id_resolves_in_each_instrument_evidence(reg, tmp_path):
     res, _ = stage(reg, tmp_path, instrument_ids=["SYN-EQ-0003", "SYN-CM-0401"])
     for iid, o in res.instruments.items():
-        ev = {ToolResult.model_validate(x).evidence_id for x in json.loads((res.out_dir / "evidence" / "instruments" / f"{iid}.json").read_text())}
+        ev = {r.evidence_id for r in OutlookStore(tmp_path).load_instrument_evidence(AS_OF, iid)}
         cited = {i for r in (*o.view.drivers, *o.view.risks) for i in r.evidence_ids}
         assert cited and cited <= ev and set(o.evidence_ids) <= ev
 
 
 def test_the_reference_chain_of_an_instrument(reg, tmp_path):
     first, _ = stage(reg, tmp_path, as_of=date(2026, 6, 30), instrument_ids=["SYN-EQ-0003"])
-    path = first.out_dir / "instruments" / "SYN-EQ-0003.json"
-    before = path.read_bytes()
+    store = OutlookStore(tmp_path).store
+    before = store.get(date(2026, 6, 30), Kind.OUTLOOK_INSTRUMENT, "SYN-EQ-0003")
     second, _ = stage(reg, tmp_path, instrument_ids=["SYN-EQ-0003"])
     o = second.instruments["SYN-EQ-0003"]
-    assert path.read_bytes() == before and o.previous_as_of == date(2026, 6, 30) and not o.is_first
+    assert store.get(date(2026, 6, 30), Kind.OUTLOOK_INSTRUMENT, "SYN-EQ-0003") == before and o.previous_as_of == date(2026, 6, 30) and not o.is_first
 
 
 # ---- command line -----------------------------------------------------------------------------
-def test_cli_writes_market_and_instruments(seeded_db, tmp_path, capsys, monkeypatch):
+def test_cli_saves_market_and_instruments(seeded_db, tmp_path, capsys, monkeypatch):
     monkeypatch.delenv("RM_DASHBOARD_DB", raising=False)
     args = ["--as-of", "2026-08-26", "--db", str(seeded_db), "--reports-dir", str(tmp_path)]
     assert main(args) == 0
     out = capsys.readouterr().out
     assert "market outlook written" in out and "instrument outlooks: 62 written" in out and "0 unchanged" in out
-    assert len(list((tmp_path / "2026-08-26" / "outlook" / "instruments").glob("*.json"))) == 62
+    assert len(OutlookStore(tmp_path).instrument_ids(AS_OF)) == 62
     assert main(args) == 0
     assert "already exist with the same inputs: unchanged" in capsys.readouterr().out
     assert main([*args, "--instruments", "SYN-EQ-0001,SYN-EQ-0002", "--force"]) == 0

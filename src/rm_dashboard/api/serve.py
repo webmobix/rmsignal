@@ -6,6 +6,8 @@ import sys
 
 import uvicorn
 
+from ..settings import Settings
+from ..store import open_store
 from .app import create_app
 
 
@@ -16,16 +18,27 @@ def main(argv: list[str] | None = None) -> None:
         help="seeded SQLite database (default: $RM_DASHBOARD_DB)",
     )
     parser.add_argument(
-        "--reports", default=os.environ.get("RM_DASHBOARD_REPORTS", "reports"),
-        help="folder of persisted runs (default: $RM_DASHBOARD_REPORTS or ./reports)",
+        "--data-source", default=None,
+        help="where the source data is read from: sqlite:<file> or firestore:<project> (default: $RM_DATA_SOURCE, else --db)",
+    )
+    parser.add_argument(
+        "--artifact-store", default=None,
+        help="where the runs were saved: sqlite:<file or folder> or firestore:<project> (default: $RM_ARTIFACT_STORE or reports/artifacts.db)",
+    )
+    parser.add_argument(
+        "--reports", default=None,
+        help="folder holding artifacts.db (older form of --artifact-store; $RM_DASHBOARD_REPORTS)",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
-    if not args.db:
-        parser.error("no database given: pass --db or set RM_DASHBOARD_DB")
+    data_source = args.data_source or os.environ.get("RM_DATA_SOURCE") or args.db
+    if not data_source:
+        parser.error("no database given: pass --db or set RM_DASHBOARD_DB (or --data-source / RM_DATA_SOURCE)")
+    spec = args.artifact_store or args.reports or os.environ.get("RM_ARTIFACT_STORE") or os.environ.get("RM_DASHBOARD_REPORTS") \
+        or Settings().artifact_store
     try:
-        app = create_app(args.db, args.reports)
-    except FileNotFoundError as exc:
+        app = create_app(data_source, open_store(spec))
+    except (FileNotFoundError, ValueError, ImportError) as exc:
         sys.exit(f"error: {exc}")
     uvicorn.run(app, host=args.host, port=args.port)

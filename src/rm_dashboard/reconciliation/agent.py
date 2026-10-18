@@ -13,7 +13,7 @@ from rm_dashboard.domain import Gap
 from rm_dashboard.llmlog import llm_config
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyDenied, PolicyEscalated, PolicyEngine, RunContext
 from rm_dashboard.policy.engine import COMPLIANCE_CONTENT, EVIDENCE_PROVENANCE
-from rm_dashboard.reportsource import FolderReportSource, flatten
+from rm_dashboard.reportsource import StoreReportSource, flatten
 from rm_dashboard.tools import ALLOWLISTS, ToolRegistry
 
 from .contracts import NoteResult, Reconciliation
@@ -46,7 +46,7 @@ def parse_results(text: str | None) -> tuple[list, str | None]:
     return parse_object_list(text, "results")
 
 
-def reconcile(registry: ToolRegistry, client_id: str, *, as_of: date, source: FolderReportSource, model: BaseChatModel,
+def reconcile(registry: ToolRegistry, client_id: str, *, as_of: date, source: StoreReportSource, model: BaseChatModel,
               engine: PolicyEngine | None = None, audit: AuditLog | None = None) -> Reconciliation:
     """Reconcile one client's notes. Always returns a ``Reconciliation``; failures become gaps."""
     from rm_dashboard.agents.scope import register_people
@@ -63,7 +63,7 @@ def reconcile(registry: ToolRegistry, client_id: str, *, as_of: date, source: Fo
         if report is None or evidence is None:
             what = "report" if report is None else "evidence"
             gap = Gap(kind="no_data", subject=client_id,
-                      description=f"no persisted {what} for {client_id} at {as_of} in {source.run_dir(as_of)}")
+                      description=f"no persisted {what} for {client_id} at {as_of} in {source.location(as_of)}")
             return _finish(run, Reconciliation(status="insufficient_data", gaps=[gap], **base))
         notes, _ = load_notes(registry, run, client_id, as_of)
         if not notes:

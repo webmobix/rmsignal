@@ -1,4 +1,4 @@
-"""Where the overview reads from: the persisted per-client outputs of a date, and the RM's clients."""
+"""Where the overview reads from: the stored per-client outputs of a date, and the RM's clients."""
 
 from dataclasses import dataclass
 from datetime import date
@@ -8,7 +8,8 @@ from typing import Protocol
 from rm_dashboard.actions.contracts import ClientActions
 from rm_dashboard.mandate_reconciliation import MandateReconciliation
 from rm_dashboard.reconciliation import Reconciliation
-from rm_dashboard.reportsource import FlatFinding, FolderReportSource, flatten
+from rm_dashboard.reportsource import FlatFinding, StoreReportSource, flatten
+from rm_dashboard.store import ArtifactStore, Kind, read_model
 
 
 @dataclass(frozen=True)
@@ -26,43 +27,41 @@ class RmInfo:
 
 
 class OverviewSource(Protocol):
-    """Swappable input: a folder today, a store later."""
+    """Swappable input."""
 
     def location(self, as_of: date) -> str: ...
-    def has_actions_folder(self, as_of: date) -> bool: ...
+    def has_actions(self, as_of: date) -> bool: ...
     def client_actions(self, as_of: date, client_id: str) -> ClientActions | None: ...
     def findings(self, as_of: date, client_id: str) -> dict[str, FlatFinding] | None: ...
     def reconciliation(self, as_of: date, client_id: str) -> Reconciliation | None: ...
     def mandate_reconciliation(self, as_of: date, client_id: str) -> MandateReconciliation | None: ...
 
 
-class FolderOverviewSource:
-    """``reports/<as_of>/{<client>.json, reconciliation/, actions/}`` as written by the earlier stages."""
+class StoreOverviewSource:
+    """Reports, reconciliations and actions of a date as written by the earlier stages."""
 
-    def __init__(self, base_dir: str | Path):
-        self.reports = FolderReportSource(base_dir)
+    def __init__(self, store: ArtifactStore | str | Path):
+        self.reports = StoreReportSource(store)
+        self.store = self.reports.store
 
     def location(self, as_of: date) -> str:
-        return str(self.reports.run_dir(as_of) / "actions")
+        return self.reports.location(as_of)
 
-    def has_actions_folder(self, as_of: date) -> bool:
-        return (self.reports.run_dir(as_of) / "actions").is_dir()
+    def has_actions(self, as_of: date) -> bool:
+        return bool(self.store.keys(as_of, Kind.ACTIONS))
 
     def client_actions(self, as_of: date, client_id: str) -> ClientActions | None:
-        p = self.reports.run_dir(as_of) / "actions" / f"{client_id}.json"
-        return ClientActions.model_validate_json(p.read_text()) if p.is_file() else None
+        return read_model(self.store, as_of, Kind.ACTIONS, client_id, ClientActions)
 
     def findings(self, as_of: date, client_id: str) -> dict[str, FlatFinding] | None:
         report = self.reports.report(as_of, client_id)
         return {f.ref: f for f in flatten(report)} if report else None
 
     def reconciliation(self, as_of: date, client_id: str) -> Reconciliation | None:
-        p = self.reports.run_dir(as_of) / "reconciliation" / f"{client_id}.json"
-        return Reconciliation.model_validate_json(p.read_text()) if p.is_file() else None
+        return read_model(self.store, as_of, Kind.RECONCILIATION, client_id, Reconciliation)
 
     def mandate_reconciliation(self, as_of: date, client_id: str) -> MandateReconciliation | None:
-        p = self.reports.run_dir(as_of) / "mandate-reconciliation" / f"{client_id}.json"
-        return MandateReconciliation.model_validate_json(p.read_text()) if p.is_file() else None
+        return read_model(self.store, as_of, Kind.MANDATE_RECONCILIATION, client_id, MandateReconciliation)
 
 
 def rms_at(repo, as_of: date) -> dict[str, RmInfo]:

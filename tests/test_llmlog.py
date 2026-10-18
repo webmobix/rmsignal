@@ -16,6 +16,7 @@ from rm_dashboard.runners.actions import run_actions
 from rm_dashboard.runners.outlook import run_outlook
 from rm_dashboard.runners.reconcile import run_reconcile
 from rm_dashboard.settings import Settings
+from rm_dashboard.store.summary import get_summary
 
 AS_OF = date(2026, 8, 26)
 
@@ -142,7 +143,7 @@ class Counting:
 
 def test_batch_groups_calls_by_thread_and_summary_matches_log(reg, tmp_path, capsys):
     models = Counting()
-    result = run_batch(reg, as_of=AS_OF, out_dir=tmp_path, client_ids=["CL-0001", "CL-0017"], models=models)
+    result = run_batch(reg, as_of=AS_OF, store=tmp_path, client_ids=["CL-0001", "CL-0017"], models=models)
     text = (result.out_dir / "run.log").read_text()
     rows = calls(text)
     assert len(rows) == models.calls > 0
@@ -156,33 +157,33 @@ def test_batch_groups_calls_by_thread_and_summary_matches_log(reg, tmp_path, cap
     assert any({"relationship_analyst", "portfolio_analyst"} <= {r["agent"] for r in g} for g in by_thread.values())  # delegation grouped
     llm = result.summary["llm"]
     assert llm["calls"] == len(rows) and llm["total_tokens"] == sum(int(r["total"]) for r in rows)
-    assert llm == json.loads((result.out_dir / "summary.json").read_text())["llm"]
+    assert llm == get_summary(result.store, AS_OF, "analyse")["llm"]
     assert "elapsed_s" not in json.dumps(llm) and "llm_summary runner=analyse" in text
     assert capsys.readouterr().err.count(" llm_call ") == len(rows)
 
 
 def test_no_prompt_response_or_name_in_logs(reg, tmp_path):
     names = [r["client_name"] for r in reg.ctx.repo.clients(as_of=AS_OF).frame.iter_rows(named=True)][:5]
-    result = run_batch(reg, as_of=AS_OF, out_dir=tmp_path, client_ids=["CL-0001"], models=Counting())
+    result = run_batch(reg, as_of=AS_OF, store=tmp_path, client_ids=["CL-0001"], models=Counting())
     text = (result.out_dir / "run.log").read_text()
     assert text and not any(n in text for n in names) and "Analyse client" not in text and '"findings"' not in text
 
 
 def test_later_stages_log_their_agents(reg, tmp_path):
-    run_batch(reg, as_of=AS_OF, out_dir=tmp_path, client_ids=["CL-0001"], models=Counting())
-    rec = run_reconcile(reg, as_of=AS_OF, reports_dir=tmp_path, client_ids=["CL-0001"], models=Counting())
-    act = run_actions(reg, as_of=AS_OF, reports_dir=tmp_path, client_ids=["CL-0001"], models=Counting())
+    run_batch(reg, as_of=AS_OF, store=tmp_path, client_ids=["CL-0001"], models=Counting())
+    rec = run_reconcile(reg, as_of=AS_OF, store=tmp_path, client_ids=["CL-0001"], models=Counting())
+    act = run_actions(reg, as_of=AS_OF, store=tmp_path, client_ids=["CL-0001"], models=Counting())
     for res, agent in ((rec, "note_reconciler"), (act, "client_actions")):
         rows = calls((res.out_dir / "run.log").read_text())
         assert len(rows) == 1 and rows[0]["agent"] == agent and rows[0]["subject"] == "CL-0001" and res.summary["llm"]["calls"] == 1
 
 
 def test_outlook_logs_and_an_unchanged_rerun_leaves_the_log_alone(reg, tmp_path):
-    first = run_outlook(reg, as_of=AS_OF, reports_dir=tmp_path, models=Counting())
+    first = run_outlook(reg, as_of=AS_OF, store=tmp_path, models=Counting())
     log = first.out_dir / "run.log"
     assert calls(log.read_text()) and first.summary["llm"]["calls"] == len(calls(log.read_text()))
     before = log.read_bytes()
-    again = run_outlook(reg, as_of=AS_OF, reports_dir=tmp_path, models=Counting())
+    again = run_outlook(reg, as_of=AS_OF, store=tmp_path, models=Counting())
     assert again.untouched and log.read_bytes() == before
 
 
@@ -193,7 +194,7 @@ def test_an_all_failed_batch_still_gets_a_summary(reg, tmp_path):
             self.made.append(m)
             return m
 
-    result = run_batch(reg, as_of=AS_OF, out_dir=tmp_path, client_ids=["CL-0001"], models=Failing())
+    result = run_batch(reg, as_of=AS_OF, store=tmp_path, client_ids=["CL-0001"], models=Failing())
     llm = result.summary["llm"]
     assert llm["calls"] >= 1 and llm["failed"] == llm["calls"]
     assert "llm_summary_warning" in (result.out_dir / "run.log").read_text()

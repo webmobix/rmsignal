@@ -16,7 +16,8 @@ from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyDenied, Policy
 from rm_dashboard.policy.engine import COMPLIANCE_CONTENT, EVIDENCE_PROVENANCE
 from rm_dashboard.mandate_reconciliation import BreachResult, MandateReconciliation
 from rm_dashboard.reconciliation import NoteResult, Reconciliation
-from rm_dashboard.reportsource import FolderReportSource, flatten
+from rm_dashboard.reportsource import StoreReportSource, flatten
+from rm_dashboard.store import Kind, read_model
 from rm_dashboard.tools import ToolRegistry
 
 from .assemble import finalise, not_actioned
@@ -28,14 +29,12 @@ ROLE = "client_actions"
 SYSTEM_PROMPT = prompts.CLIENT_ACTIONS + "\n" + RUBRIC_TEXT
 
 
-def load_reconciliation(source: FolderReportSource, as_of: date, client_id: str) -> Reconciliation | None:
-    p = source.run_dir(as_of) / "reconciliation" / f"{client_id}.json"
-    return Reconciliation.model_validate_json(p.read_text()) if p.is_file() else None
+def load_reconciliation(source: StoreReportSource, as_of: date, client_id: str) -> Reconciliation | None:
+    return read_model(source.store, as_of, Kind.RECONCILIATION, client_id, Reconciliation)
 
 
-def load_mandate_reconciliation(source: FolderReportSource, as_of: date, client_id: str) -> MandateReconciliation | None:
-    p = source.run_dir(as_of) / "mandate-reconciliation" / f"{client_id}.json"
-    return MandateReconciliation.model_validate_json(p.read_text()) if p.is_file() else None
+def load_mandate_reconciliation(source: StoreReportSource, as_of: date, client_id: str) -> MandateReconciliation | None:
+    return read_model(source.store, as_of, Kind.MANDATE_RECONCILIATION, client_id, MandateReconciliation)
 
 
 def build_input(client_id: str, as_of: date, findings, notes: list[NoteResult], quality_flags: list[str],
@@ -54,7 +53,7 @@ def build_input(client_id: str, as_of: date, findings, notes: list[NoteResult], 
             f"{INPUT_MARKER}{json.dumps(payload, sort_keys=True)}")
 
 
-def derive_actions(registry: ToolRegistry, client_id: str, *, as_of: date, source: FolderReportSource, model: BaseChatModel,
+def derive_actions(registry: ToolRegistry, client_id: str, *, as_of: date, source: StoreReportSource, model: BaseChatModel,
                    engine: PolicyEngine | None = None, audit: AuditLog | None = None) -> ClientActions:
     """Actions for one client. Always returns a ``ClientActions``; failures become gaps."""
     run = RunContext(client_id, as_of, engine=engine or MockPolicyEngine(), audit=audit or AuditLog())
@@ -70,7 +69,7 @@ def derive_actions(registry: ToolRegistry, client_id: str, *, as_of: date, sourc
         report, evidence = source.report(as_of, client_id), source.evidence(as_of, client_id)
         if report is None or evidence is None:
             what = "report" if report is None else "evidence"
-            gap = Gap(kind="no_data", subject=client_id, description=f"no persisted {what} for {client_id} at {as_of} in {source.run_dir(as_of)}")
+            gap = Gap(kind="no_data", subject=client_id, description=f"no persisted {what} for {client_id} at {as_of} in {source.location(as_of)}")
             return _finish(run, ClientActions(status="insufficient_data", gaps=[gap], **base))
         rec = load_reconciliation(source, as_of, client_id)
         if rec is None:

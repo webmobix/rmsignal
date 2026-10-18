@@ -1,6 +1,6 @@
 """Polars implementation of ``PitRepository`` over the seeded SQLite mirror.
 
-This module is the only consumer of ``SqliteDataSource`` for analysis code. Tables are
+This module is the only consumer of the ``DataSource`` contract for analysis code. Tables are
 loaded once into Polars frames; wide per-date column groups are melted into long tables.
 """
 
@@ -10,7 +10,7 @@ from datetime import date
 
 import polars as pl
 
-from rm_dashboard.data.datasource import SqliteDataSource
+from rm_dashboard.data.contract import DataSource
 from rm_dashboard.domain import QualityFlag, Source
 
 from .config import QualityConfig
@@ -61,7 +61,7 @@ def _long(rows: list, id_cols: list[str], measures: dict[str, str]) -> pl.DataFr
 
 
 class PolarsPitRepository:
-    def __init__(self, ds: SqliteDataSource, config: QualityConfig | None = None):
+    def __init__(self, ds: DataSource, config: QualityConfig | None = None):
         self.config = config or QualityConfig()
         self._clients = _frame(ds.list_clients())
         self._portfolios = _frame(ds.list_portfolios())

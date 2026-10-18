@@ -60,7 +60,8 @@ from a deterministic tool, every finding cites evidence ids, and every run is re
 | `tools` | the only data and calculation surface agents have, with per-agent allow-lists | |
 | `policy` | `PolicyEngine` interface (mock), ten checkpoints, audit log, PII pseudonymisation | [docs/policy-checkpoints.md](docs/policy-checkpoints.md) |
 | `agents` | Relationship -> Portfolio -> Instrument analysts (Deep Agents), output guard, interactive sessions | [docs/agents.md](docs/agents.md); how everything fits together: [docs/architecture.md](docs/architecture.md) |
-| `reportsource` | reads the persisted batch output (reports, evidence) and gives every finding a stable reference | [docs/contracts.md](docs/contracts.md) |
+| `store` | the artifact store (SQLite today): saves and reads every generated artifact by date, kind and key | this README |
+| `reportsource` | reads the stored batch output (reports, evidence) and gives every finding a stable reference | [docs/contracts.md](docs/contracts.md) |
 | `reconciliation` | checks what RM notes say against the client report: `consistent`, `contradicted`, `unverifiable` (notes only) | [docs/agents.md](docs/agents.md) |
 | `actions` | per-client next actions: what, why, category, importance rubric, derived time horizon, links | [docs/agents.md](docs/agents.md) |
 | `overview` | the RM dashboard overview: all client actions ranked, grouped and linked, with optional briefing | [docs/agents.md](docs/agents.md) |
@@ -78,10 +79,55 @@ uv run rm-dashboard-analyse --as-of 2026-08-26 --db rm.db --out reports
 uv run rm-dashboard-analyse --as-of 2026-03-31 --db rm.db --clients CL-0001,CL-0017
 ```
 
-Writes `reports/<as-of>/<client>.json` (one `Report` per client), `evidence/<client>.json` (every tool
-result behind it), `audit.jsonl` and `summary.json` with status counts. A run always delivers a report:
+Saves one `Report` per client, the evidence behind it (every tool result), the audit trail and a run summary
+with status counts, all in the artifact store (see below). A run always delivers a report:
 `complete`, `partial` (gaps listed) or `insufficient_data` (nothing at that date). `--as-of` is required;
 `--db` can be replaced by `RM_DASHBOARD_DB`.
+
+### Where artifacts are stored
+
+Everything the runners produce (reports, evidence, reconciliations, actions, overviews, outlooks, scenario results, run
+summaries and audit trails) is saved in an **artifact store**, addressed by as-of date, kind and key. The default is one
+SQLite file, `reports/artifacts.db`, separate from `rm.db` (which stays read-only and can be re-seeded without losing artifacts).
+Choose it with `--artifact-store`, `RM_ARTIFACT_STORE` or the older `--reports-dir`/`--out` folder form:
+
+```sh
+RM_ARTIFACT_STORE=sqlite:reports/artifacts.db      # the default; a folder path means <folder>/artifacts.db
+uv run rm-dashboard-reconcile --as-of 2026-08-26 --db rm.db --artifact-store sqlite:/data/artifacts.db
+```
+
+An unknown backend name fails at start-up and lists the valid ones (`sqlite`, `firestore`). The operational log of LLM calls
+(`run.log`) is a plain file under `<store folder>/logs/<as-of>/<stage>/`, not an artifact.
+
+### Demo on Firestore
+
+For a demo server, the source data and the generated artifacts live in Firestore. The runners still write locally (to SQLite);
+`rm-dashboard-load` publishes what they produced, and the server reads from Firestore. Firestore is read-only for runners: pointing
+one at `firestore:...` fails at start-up, before any model call, and names the loader.
+
+```sh
+uv sync --extra firestore                       # the Firestore client library is an optional extra
+export GOOGLE_CLOUD_PROJECT=my-demo-project     # credentials: Application Default Credentials (`gcloud auth application-default login`)
+                                                # or the emulator: `export FIRESTORE_EMULATOR_HOST=localhost:8080`
+
+# 1. generate locally, as above (seed, outlook, analyse, reconcile, mandate-reconcile, actions, overview, scenarios)
+# 2. publish the source data and the artifacts
+uv run rm-dashboard-load source --to firestore:my-demo-project [--replace]
+uv run rm-dashboard-load artifacts --from sqlite:reports/artifacts.db --to firestore:my-demo-project [--as-of 2026-08-26] [--replace]
+# 3. start the server on Firestore
+RM_DATA_SOURCE=firestore:my-demo-project RM_ARTIFACT_STORE=firestore:my-demo-project uv run rm-dashboard-serve
+```
+
+`firestore:<project>[/<database>]` (default database `(default)`). Settings: `RM_DATA_SOURCE` (source tables, default the SQLite file
+of `RM_DASHBOARD_DB`) and `RM_ARTIFACT_STORE` (artifacts); `--data-source`/`--artifact-store` on `rm-dashboard-serve` and
+`--to`/`--from` on the loader name the same specs. The loader validates every dataset file before writing and says which file, row
+and column is wrong; it writes with deterministic document ids in batches, so if it stops part-way, running the same command again
+completes the load. `--replace` removes what the loader owns first. `--as-of` (repeatable) copies only those dates; the scenario
+catalogue goes with a full copy or with `--catalogue`. `uv run rm-dashboard-load artifacts --from reports/ --to ...` imports an older
+`reports/<as-of>/...` folder tree once (evidence and audit are re-chunked into one record per tool result and per entry, so no
+document nears Firestore's 1 MiB limit). Firestore layout: a collection per source table (document id = primary key, `row-<n>` for
+tables without one, `_seq` for file order); one `artifacts` collection with id `<as-of>|<kind>|<key>` and the body as JSON text; a
+`runs` collection with one marker per date.
 
 ### Reconcile RM notes
 
@@ -89,7 +135,7 @@ result behind it), `audit.jsonl` and `summary.json` with status counts. A run al
 uv run rm-dashboard-reconcile --as-of 2026-08-26 --db rm.db --reports-dir reports [--clients CL-0001,CL-0017]
 ```
 
-Reads the batch output of that date and writes `reports/<as-of>/reconciliation/<client>.json`: for each RM note dated
+Reads the batch output of that date and saves a `reconciliation` artifact per client: for each RM note dated
 on or before `--as-of`, a verdict (`consistent`, `contradicted`, `unverifiable`) against the client's report, with the
 evidence on both sides. Notes only; mandate reconciliation is the next stage. See [docs/agents.md](docs/agents.md).
 
@@ -101,7 +147,7 @@ uv run rm-dashboard-mandate-reconcile --as-of 2026-08-26 --db rm.db --reports-di
 
 Run after `rm-dashboard-reconcile` and before `rm-dashboard-actions`. Reads the computed breaches in the batch evidence
 (asset-class band, single-position limit and sustainability exclusion) and the notes dated on or before `--as-of`, and
-writes `reports/<as-of>/mandate-reconciliation/<client>.json`: one status per breach (`no_note`, `acknowledged`,
+saves a `mandate-reconciliation` artifact per client: one status per breach (`no_note`, `acknowledged`,
 `client_directed`, `contradicted`) with the quoted notes. A waiver in a note is shown as a claim and never removes a
 breach. See [docs/agents.md](docs/agents.md).
 
@@ -111,7 +157,7 @@ breach. See [docs/agents.md](docs/agents.md).
 uv run rm-dashboard-actions --as-of 2026-08-26 --db rm.db --reports-dir reports [--clients CL-0001,CL-0017]
 ```
 
-Reads the batch output (and `reconciliation/` and `mandate-reconciliation/` when present) and writes `reports/<as-of>/actions/<client>.json`: for each
+Reads the batch output (and the reconciliations and mandate reconciliations when present) and saves an `actions` artifact per client: for each
 client a short list of actions saying what to do and why, with category, importance (rubric floors), a time horizon
 derived from dates in the evidence, and links to the findings, notes and mandate-reconciliation results they rest on. The
 status of a breach (`mandate-reconciliation/` when present) sets the importance floor and the wording of its `mandate_drift`
@@ -124,7 +170,7 @@ uv run rm-dashboard-overview --as-of 2026-08-26 --db rm.db --reports-dir reports
 ```
 
 Needs the earlier stages' output (`rm-dashboard-analyse`, then `rm-dashboard-reconcile` and `rm-dashboard-actions`).
-Writes `reports/<as-of>/overview/<rm_id>.json`: all next actions of the RM's clients ranked by importance, horizon and
+Saves one `overview` artifact per RM: all next actions of the RM's clients ranked by importance, horizon and
 client size, grouped by category, each with what, why and links to the client, report findings and notes; clients
 without actions are listed with the reason. See [docs/agents.md](docs/agents.md).
 
@@ -232,11 +278,11 @@ uv run pytest
 uv run rm-dashboard-outlook --as-of 2026-08-26 --db rm.db --reports-dir reports [--instruments SYN-EQ-0001,SYN-CM-0401] [--force]
 ```
 
-Writes `reports/<as-of>/outlook/market.json`: the bank's house view of the market, independent of clients: a direction,
+Saves the market outlook (`outlook-market`): the bank's house view of the market, independent of clients: a direction,
 confidence, cited drivers (events are the stated reasons) and risks per segment, and what changed since the previous
 outlook. It changes only when new data has arrived; otherwise the previous views are carried forward and earlier
-outlooks stay as the reference. With `--instruments` or by default for every held instrument, it also writes
-`reports/<as-of>/outlook/instruments/<id>.json`: one outlook per instrument, computed once and shared by all clients, in the
+outlooks stay as the reference. With `--instruments` or by default for every held instrument, it also saves
+one `outlook-instrument` artifact per instrument, computed once and shared by all clients, in the
 context of its peers, the events that bear on it and the market outlook. Run it before the client analysis: the pipeline order is
 `rm-dashboard-outlook` -> `rm-dashboard-analyse` -> `rm-dashboard-reconcile` -> `rm-dashboard-mandate-reconcile` -> `rm-dashboard-actions` -> `rm-dashboard-overview`, and the client
 analysis reads the outlooks (a missing outlook is a gap, not a failure). See [docs/agents.md](docs/agents.md).
@@ -247,8 +293,8 @@ analysis reads the outlooks (a missing outlook is a gap, not a failure). See [do
 uv run rm-dashboard-scenarios --as-of 2026-08-26 --db rm.db --reports-dir reports [--scenario ID] [--portfolio PF-0001] [--force]
 ```
 
-A scenario is stored text (`reports/scenarios/catalogue.json`, seeded with three; add one by adding a record). For each scenario the
-command writes, under `reports/<as-of>/scenarios/<id>/`, a market shock vector (best, likely and worst move per market channel over the
+A scenario is stored text (the `scenario-catalogue` artifact, seeded with three; add one by adding a record). For each scenario the
+command saves a market shock vector (best, likely and worst move per market channel over the
 horizon, default 3 months), the computed impact on every portfolio, and the client and RM-book roll-ups. Every figure is computed by
 code; a model supplies the market judgment, places the few holdings the rules cannot map, and writes the summaries, which are checked
 against the computed figures. Cases are conditional on the scenario and are not probabilities. A result is rewritten only when its

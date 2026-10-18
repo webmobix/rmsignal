@@ -132,7 +132,7 @@ class LlmCallLogger(BaseCallbackHandler):
 
     # ---- summary --------------------------------------------------------------------------
     def counts(self) -> dict:
-        """The deterministic part of the summary (no durations): this is what runners persist in ``summary.json``,
+        """The deterministic part of the summary (no durations): this is what runners persist in the run summary,
         so that a rerun on the same inputs stays byte-identical."""
         s = self.summary()
         keep = ("calls", "failed", "input_tokens", "output_tokens", "total_tokens", "calls_without_usage")

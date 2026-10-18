@@ -58,7 +58,7 @@ def produce_market_outlook(registry: ToolRegistry, *, as_of: date, store: Outloo
                            engine: PolicyEngine | None = None, audit: AuditLog | None = None,
                            force: bool = False) -> tuple[MarketOutlook, list[ToolResult]]:
     """The market outlook for ``as_of`` and the evidence it rests on. Always returns an outlook; failures become gaps."""
-    registry = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=store.base_dir), registry.specs.values())
+    registry = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=store.store), registry.specs.values())
     run = RunContext(SUBJECT, as_of, engine=engine or MockPolicyEngine(), audit=audit or AuditLog())
     repo = registry.ctx.repo
     inputs, no_market = compute_inputs(repo, as_of)
@@ -168,7 +168,7 @@ def produce_instrument_outlook(registry: ToolRegistry, *, instrument_id: str, as
                                engine: PolicyEngine | None = None, audit: AuditLog | None = None,
                                force: bool = False) -> tuple[InstrumentOutlook, list[ToolResult]]:
     """The outlook of one instrument and the evidence it rests on. Always returns an outlook; failures become gaps."""
-    registry = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=store.base_dir), registry.specs.values())
+    registry = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=store.store), registry.specs.values())
     run = RunContext(instrument_id, as_of, engine=engine or MockPolicyEngine(), audit=audit or AuditLog())
     repo = registry.ctx.repo
     inputs, row, no_data = instrument_inputs(repo, store, instrument_id, as_of)

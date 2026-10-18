@@ -90,7 +90,7 @@ def with_reports(registry, tmp_path):
     store = OutlookStore(tmp_path)
     for d in ("2026-03-31", "2026-06-30", "2026-08-26"):
         store.save_market(outlook(d, "negative" if d == "2026-06-30" else "neutral"), [])
-    return ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=tmp_path))
+    return ToolRegistry(dataclasses.replace(registry.ctx, artifacts=tmp_path))
 
 
 def test_previous_market_is_the_latest_strictly_earlier(with_reports):
@@ -107,9 +107,9 @@ def test_previous_market_never_returns_a_later_outlook(with_reports):
     assert r.data["previous_as_of"] == "2026-06-30"
 
 
-def test_previous_market_without_reports_folder(registry):
+def test_previous_market_without_an_artifact_store(registry):
     r = call(registry, "outlook.previous_market")
-    assert r.status == "no_data" and "reports folder" in r.reason
+    assert r.status == "no_data" and "artifact store" in r.reason
 
 
 def test_previous_view_offers_no_evidence_ids(with_reports):
@@ -297,7 +297,7 @@ def test_outlook_market_makes_the_outlook_evidence_resolvable(registry, tmp_path
     store = OutlookStore(tmp_path)
     out, ev = produce_market_outlook(registry, as_of=date(2026, 8, 26), store=store, models=lambda r: StubChatModel(role=r))
     store.save_market(out, ev)
-    reg = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=tmp_path))
+    reg = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=tmp_path))
     run_store = EvidenceStore()
     r = reg.toolbox("test", reg.names(), store=run_store).call("outlook.market", {"as_of": "2026-08-26"})
     cited = {i for v in out.views for d in (*v.drivers, *v.risks) for i in d.evidence_ids}
@@ -343,7 +343,7 @@ def test_outlook_instrument_makes_the_outlook_evidence_resolvable(registry, tmp_
     store.save_market(m, mev)
     o, ev = produce_instrument_outlook(registry, instrument_id="SYN-CM-0401", as_of=date(2026, 8, 26), store=store, models=lambda r: StubChatModel(role=r))
     store.save_instrument(o, ev)
-    reg = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=tmp_path))
+    reg = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=tmp_path))
     run_store = EvidenceStore()
     r = reg.toolbox("test", reg.names(), store=run_store).call("outlook.instrument", {"as_of": "2026-08-26", "instrument_id": "SYN-CM-0401"})
     cited = {i for d in (*o.view.drivers, *o.view.risks) for i in d.evidence_ids}

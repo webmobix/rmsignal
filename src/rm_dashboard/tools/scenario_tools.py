@@ -7,7 +7,7 @@ from .envelope import build_result
 from .spec import Params, ToolContext, ToolSpec
 
 CONDITIONAL = "conditional_scenario"
-NO_FOLDER = "no reports folder is configured: the shock vector cannot be read"
+NO_FOLDER = "no artifact store is configured: the shock vector cannot be read"
 NO_VECTOR = "no shock vector exists for scenario {id} on {as_of}; run rm-dashboard-scenarios"
 
 
@@ -17,7 +17,7 @@ class ScenarioParams(Params):
 
 def scenario_vector(ctx: ToolContext, p: ScenarioParams):
     """The market shock vector of a scenario at the run's date, as the evidence for what a channel does under it."""
-    store = ScenarioStore(ctx.reports_dir) if ctx.reports_dir else None
+    store = ScenarioStore(ctx.artifacts) if ctx.artifacts is not None else None
     v = store.load_vector(p.as_of, p.scenario_id) if store else None
     if v is None or not v.channels:
         return build_result(tool="scenario.vector", version="1", params=p, as_of=p.as_of, data=None, status="no_data",

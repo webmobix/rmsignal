@@ -1,33 +1,30 @@
-"""What the read endpoints share: the point-in-time repository and the persisted run folders."""
+"""What the read endpoints share: the point-in-time repository and the artifact store."""
 
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from rm_dashboard.data.datasource import SqliteDataSource
+from rm_dashboard.data.contract import DataSource
+from rm_dashboard.data.factory import open_data_source
 from rm_dashboard.outlook.store import OutlookStore
-from rm_dashboard.overview.source import FolderOverviewSource
+from rm_dashboard.overview.source import StoreOverviewSource
 from rm_dashboard.pit import PolarsPitRepository
-from rm_dashboard.reportsource import FolderReportSource
+from rm_dashboard.reportsource import StoreReportSource
+from rm_dashboard.store import ArtifactStore, SqliteArtifactStore
+
+NO_ARTIFACTS = SqliteArtifactStore(Path("__no_artifacts__") / "artifacts.db")
+"""Stands in when no store is configured: it never gets created, so every read finds nothing."""
 
 
 class AsOfIndex:
-    """Dates for which a run folder exists under the reports folder. Never reads the clock."""
+    """Dates for which the store holds an artifact. Never reads the clock."""
 
-    def __init__(self, reports_dir: Path | None):
-        self.reports_dir = reports_dir
+    def __init__(self, store: ArtifactStore | None):
+        self.store = store
 
     def dates(self) -> list[date]:
-        if self.reports_dir is None or not self.reports_dir.is_dir():
-            return []
-        out = []
-        for p in self.reports_dir.iterdir():
-            if p.is_dir():
-                try:
-                    out.append(date.fromisoformat(p.name))
-                except ValueError:
-                    continue
-        return sorted(out)
+        return self.store.dates() if self.store is not None else []
 
     def latest(self) -> date | None:
         ds = self.dates()
@@ -37,16 +34,16 @@ class AsOfIndex:
 @dataclass
 class ReadContext:
     repo: PolarsPitRepository
-    reports_dir: Path | None
+    store: ArtifactStore | None
     asof_index: AsOfIndex
-    reports: FolderReportSource
-    overviews: FolderOverviewSource
+    reports: StoreReportSource
+    overviews: StoreOverviewSource
     outlooks: OutlookStore
 
     @classmethod
-    def build(cls, db_path: Path, reports_dir: Path | None) -> "ReadContext":
-        with SqliteDataSource(db_path) as ds:
-            repo = PolarsPitRepository(ds)  # frames are loaded into memory, the connection can close
-        base = reports_dir if reports_dir is not None else Path("__no_reports__")
-        return cls(repo, reports_dir, AsOfIndex(reports_dir), FolderReportSource(base),
-                   FolderOverviewSource(base), OutlookStore(base))
+    def build(cls, source: DataSource | str | Path, store: ArtifactStore | None) -> "ReadContext":
+        """``source`` is a datasource or the spec/path of one; the frames are loaded into memory, so it is closed again."""
+        with closing(open_data_source(source) if isinstance(source, (str, Path)) else source) as ds:
+            repo = PolarsPitRepository(ds)
+        base = store if store is not None else NO_ARTIFACTS
+        return cls(repo, store, AsOfIndex(store), StoreReportSource(base), StoreOverviewSource(base), OutlookStore(base))

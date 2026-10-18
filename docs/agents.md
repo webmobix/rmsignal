@@ -17,6 +17,8 @@ The whole landscape (every agent, the runners that call them, tools per agent an
 
 Code: `rm_dashboard.agents` (`analyst.py` builds, runs and assembles; `stubplans.py` scripts the test model).
 
+> File-style paths in this document (`reports/<as_of>/actions/<client>.json`, `summary.json`, `audit.jsonl`) name stored artifacts: the kind and key they map to are in [architecture.md](architecture.md) ("Artifact addresses"). Runners write them to the artifact store, not to folders.
+
 ## How a run works
 
 1. `analyse(role, subject, scope, models)` takes a subject and the run's `as_of`. The date is part of the
@@ -63,8 +65,8 @@ rm-dashboard-outlook -> rm-dashboard-analyse -> rm-dashboard-reconcile -> rm-das
 
 ## LLM call log
 
-Every runner logs each model call and a closing summary, to the console (stderr) and to `run.log` beside its `audit.jsonl`
-(`reports/<as_of>/run.log`, `.../reconciliation/`, `.../actions/`, `.../overview/`, `.../outlook/`). Python's standard
+Every runner logs each model call and a closing summary, to the console (stderr) and to `run.log`, a plain local file next to the artifact database
+(`<store folder>/logs/<as_of>/<stage>/run.log`). Python's standard
 `logging` is used; `RM_LOG_LEVEL` sets the level (default `INFO`). Code: `rm_dashboard/llmlog.py`.
 
 ```

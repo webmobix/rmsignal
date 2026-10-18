@@ -74,7 +74,7 @@ def _links_broken(a: ClientActions, source: OverviewSource, as_of: date) -> list
 def build_overview(rm: RmInfo, as_of: date, source: OverviewSource) -> Overview:
     """Everything except the optional model summary."""
     base = dict(rm_id=rm.rm_id, rm_name=rm.rm_name, as_of=as_of, clients=[c.client_id for c in rm.clients])
-    if not source.has_actions_folder(as_of) or all(source.client_actions(as_of, c.client_id) is None for c in rm.clients):
+    if not source.has_actions(as_of) or all(source.client_actions(as_of, c.client_id) is None for c in rm.clients):
         gap = Gap(kind="no_data", subject=rm.rm_id, description=f"no client actions exist for {as_of} in {source.location(as_of)}")
         without = [ClientWithoutActions(client_id=c.client_id, client_name=c.client_name,
                                         reason="actions_missing" if source.findings(as_of, c.client_id) is not None else "report_missing")

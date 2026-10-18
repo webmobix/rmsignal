@@ -1,8 +1,6 @@
 """``/api/evidence/{evidence_id}``: one stored tool result and everything that cites it."""
 
-import json
 from datetime import date
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -10,6 +8,7 @@ from pydantic import BaseModel
 
 from rm_dashboard.domain import ToolResult
 from rm_dashboard.reportsource import flatten
+from rm_dashboard.store.evidence import find_evidence
 
 from .context import ReadContext
 from .deps import AsOf, Ctx
@@ -34,31 +33,14 @@ class EvidenceResponse(BaseModel):
     cited_by: list[Citation]
 
 
-def _evidence_files(ctx: ReadContext, as_of: date) -> list[Path]:
-    run = ctx.reports.run_dir(as_of)
-    files = sorted((run / "evidence").glob("*.json")) if (run / "evidence").is_dir() else []
-    out = run / "outlook" / "evidence"
-    if out.is_dir():
-        files += sorted(out.rglob("*.json"))
-    return files
-
-
 def find_result(ctx: ReadContext, as_of: date, evidence_id: str) -> ToolResult | None:
-    for p in _evidence_files(ctx, as_of):
-        text = p.read_text()
-        if evidence_id not in text:
-            continue
-        for item in json.loads(text):
-            if item.get("evidence_id") == evidence_id:
-                return ToolResult.model_validate(item)
-    return None
+    return find_evidence(ctx.reports.store, as_of, evidence_id)
 
 
 def citations(ctx: ReadContext, as_of: date, evidence_id: str) -> list[Citation]:
     out: list[Citation] = []
-    run = ctx.reports.run_dir(as_of)
-    for p in sorted(run.glob("CL-*.json")):
-        report = ctx.reports.report(as_of, p.stem)
+    for client_id in ctx.reports.client_ids(as_of):
+        report = ctx.reports.report(as_of, client_id)
         for f in flatten(report) if report else []:
             if evidence_id in f.evidence_ids:
                 parts = f.report_path.split("/")

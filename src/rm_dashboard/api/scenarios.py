@@ -20,7 +20,7 @@ from rm_dashboard.scenarios.contracts import (
 from rm_dashboard.scenarios.store import ScenarioStore
 
 from .clientdata import client_rows
-from .context import ReadContext
+from .context import NO_ARTIFACTS, ReadContext
 from .deps import AsOf, Ctx
 
 router = APIRouter(prefix="/api", tags=["scenarios"])
@@ -132,10 +132,10 @@ class ComputedScenarioProvider:
         self.ctx = ctx
 
     def _records(self) -> list[ScenarioRecord]:
-        return CatalogueStore(self.ctx.reports_dir or "__no_reports__").load().scenarios
+        return CatalogueStore(self.ctx.store if self.ctx.store is not None else NO_ARTIFACTS).load().scenarios
 
     def _store(self) -> ScenarioStore | None:
-        return ScenarioStore(self.ctx.reports_dir) if self.ctx.reports_dir else None
+        return ScenarioStore(self.ctx.store) if self.ctx.store is not None else None
 
     def catalogue(self, as_of: date) -> list[ScenarioInfo]:
         store = self._store()

@@ -31,7 +31,7 @@ def produce_portfolio_impact(registry: ToolRegistry, *, scenario: ScenarioRecord
                              audit: AuditLog | None = None) -> tuple[PortfolioImpact, list[ToolResult]]:
     """The impact of ``scenario`` on ``portfolio_id`` and the evidence behind its prose. Always returns an impact: the figures come
     from code, so a model failure costs the prose and the placement of unmapped holdings, never the numbers."""
-    registry = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=store.base_dir), registry.specs.values())
+    registry = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=store.store), registry.specs.values())
     run = RunContext(portfolio_id, as_of, engine=engine or MockPolicyEngine(), audit=audit or AuditLog())
     inputs = load_portfolio_inputs(registry.ctx.repo, as_of, portfolio_id)
     vector = store.load_vector(as_of, scenario.scenario_id)

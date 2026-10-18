@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from rm_dashboard.actions.contracts import IMPORTANCE_ORDER
 from rm_dashboard.overview.contracts import Overview, OverviewAction
 
+from rm_dashboard.store import Kind, read_model
+
 from .clientdata import client_rows
 from .context import ReadContext
 from .deps import AsOf, Ctx
@@ -71,10 +73,8 @@ def build_overview(ctx: ReadContext, as_of: date) -> ApiOverview:
     rows = client_rows(ctx, as_of)
     rm_id = next(iter(sorted({r["rm_id"] for r in rows.values()})), "")
     rm_name = next((r["rm_name"] for r in rows.values() if r["rm_id"] == rm_id), "")
-    path = ctx.reports.run_dir(as_of) / "overview" / f"{rm_id}.json"
-    if path.is_file():
-        base = Overview.model_validate_json(path.read_text())
-    else:
+    base = read_model(ctx.reports.store, as_of, Kind.OVERVIEW, rm_id, Overview)
+    if base is None:
         base = Overview(
             rm_id=rm_id, rm_name=rm_name, as_of=as_of, status="insufficient_data",
             clients=sorted(rows),

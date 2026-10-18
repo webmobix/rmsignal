@@ -1,4 +1,4 @@
-"""The scenario catalogue: stored text records in ``<reports>/scenarios/catalogue.json``, seeded with the three first scenarios."""
+"""The scenario catalogue: stored text records (one artifact, not tied to a date), seeded with the three first scenarios."""
 
 import hashlib
 import json
@@ -7,10 +7,11 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from rm_dashboard.store import GLOBAL, ArtifactStore, Kind, as_store
+
 from .contracts import NOT_A_PROBABILITY, ScenarioRecord
 
-SUBDIR = "scenarios"
-FILE = "catalogue.json"
+KEY = "catalogue"
 
 SEED_SCENARIOS = (
     ScenarioRecord(
@@ -50,24 +51,27 @@ def _describe(e: ValidationError) -> str:
 
 
 class CatalogueStore:
-    def __init__(self, base_dir: str | Path):
-        self.base_dir = Path(base_dir)
+    def __init__(self, store: ArtifactStore | str | Path):
+        self.store = as_store(store)
 
-    @property
-    def path(self) -> Path:
-        return self.base_dir / SUBDIR / FILE
+    def _text(self) -> str | None:
+        return self.store.get(GLOBAL, Kind.SCENARIO_CATALOGUE, KEY)
+
+    def exists(self) -> bool:
+        return self._text() is not None
 
     def load(self) -> Catalogue:
         """Every valid record; a record without a premise (or any other field problem) is reported and skipped."""
-        if not self.path.is_file():
+        text = self._text()
+        if text is None:
             return Catalogue(list(SEED_SCENARIOS))
         try:
-            raw = json.loads(self.path.read_text())
+            raw = json.loads(text)
         except json.JSONDecodeError as e:
-            return Catalogue(list(SEED_SCENARIOS), [f"catalogue file is not valid JSON ({e.msg}): seeded scenarios used"])
+            return Catalogue(list(SEED_SCENARIOS), [f"catalogue is not valid JSON ({e.msg}): seeded scenarios used"])
         items = raw.get("scenarios") if isinstance(raw, dict) else raw
         if not isinstance(items, list):
-            return Catalogue(list(SEED_SCENARIOS), ["catalogue file has no scenarios list: seeded scenarios used"])
+            return Catalogue(list(SEED_SCENARIOS), ["catalogue has no scenarios list: seeded scenarios used"])
         good: list[ScenarioRecord] = []
         rejected: list[str] = []
         seen: set[str] = set()
@@ -86,12 +90,11 @@ class CatalogueStore:
         return Catalogue(good or list(SEED_SCENARIOS) if not items else good, rejected)
 
     def save(self, scenarios: list[ScenarioRecord]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"scenarios": [s.model_dump(mode="json") for s in scenarios]}, indent=2))
+        self.store.put(GLOBAL, Kind.SCENARIO_CATALOGUE, KEY, json.dumps({"scenarios": [s.model_dump(mode="json") for s in scenarios]}, indent=2))
 
     def ensure_seeded(self) -> Catalogue:
-        """Write the seeded scenarios when the store has no file; an existing file is never overwritten."""
-        if not self.path.is_file():
+        """Write the seeded scenarios when the store holds no catalogue; an existing one is never overwritten."""
+        if not self.exists():
             self.save(list(SEED_SCENARIOS))
         return self.load()
 

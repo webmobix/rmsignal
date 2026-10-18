@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from pathlib import Path
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
@@ -12,9 +13,12 @@ from rm_dashboard.mandate_reconciliation.contracts import PRECEDENCE, STATUSES
 from rm_dashboard.mandate_reconciliation.guard import WAIVER_CLAIM, guard_results
 from rm_dashboard.mandate_reconciliation.subjects import Breach, build_subjects
 from rm_dashboard.reconciliation.guard import Note
-from rm_dashboard.reportsource import FolderReportSource
+from rm_dashboard.reportsource import StoreReportSource
 from rm_dashboard.runners import open_registry, run_batch
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import Kind
+from rm_dashboard.store.audit import read_audit
+from rm_dashboard.store.summary import get_summary
 
 AS_OF = date(2026, 8, 26)
 CLIENTS = ["CL-0005", "CL-0007", "CL-0009", "CL-0018", "CL-0012"]
@@ -169,8 +173,8 @@ def reg(seeded_db):
 @pytest.fixture(scope="module")
 def source(reg, tmp_path_factory):
     out = tmp_path_factory.mktemp("reports")
-    run_batch(reg, as_of=AS_OF, out_dir=out, client_ids=CLIENTS, models=lambda role: StubChatModel(role=role))
-    return FolderReportSource(out)
+    run_batch(reg, as_of=AS_OF, store=out, client_ids=CLIENTS, models=lambda role: StubChatModel(role=role))
+    return StoreReportSource(out)
 
 
 def scripted(results, ambiguous=()):
@@ -218,7 +222,7 @@ def test_model_failure_is_partial_with_every_breach_no_note(reg, source, model):
 
 
 def test_missing_report_is_insufficient_data(reg, tmp_path):
-    rec = mandate_reconcile(reg, "CL-0007", as_of=AS_OF, source=FolderReportSource(tmp_path), model=scripted([]))
+    rec = mandate_reconcile(reg, "CL-0007", as_of=AS_OF, source=StoreReportSource(tmp_path), model=scripted([]))
     assert rec.status == "insufficient_data" and rec.results == [] and rec.gaps[0].kind == "no_data"
 
 
@@ -265,22 +269,26 @@ def test_notes_after_as_of_are_not_used(reg, source):
 
 
 # ---- 2.6 runner -----------------------------------------------------------------------------------------
-def test_cli_writes_files_and_rerun_is_identical(seeded_db, source, capsys, monkeypatch):
+def test_cli_saves_artifacts_and_rerun_is_identical(seeded_db, source, capsys, monkeypatch):
     from rm_dashboard.runners.mandate_reconcile import main
 
     monkeypatch.delenv("RM_DASHBOARD_DB", raising=False)
-    base = source.base_dir
+    base = Path(source.store.path).parent
     args = ["--as-of", "2026-08-26", "--db", str(seeded_db), "--reports-dir", str(base), "--clients", "CL-0007,CL-0001"]
     assert main(args) == 0
-    out = base / "2026-08-26" / "mandate-reconciliation"
-    first = {p.name: p.read_bytes() for p in out.glob("*.json")}
-    assert set(first) == {"CL-0007.json", "CL-0001.json", "summary.json"}
-    MandateReconciliation.model_validate_json(first["CL-0007.json"])
-    assert json.loads(first["CL-0001.json"])["status"] == "insufficient_data"  # no persisted report in this fixture
-    summary = json.loads(first["summary.json"])
-    assert summary["clients"] == 2 and "breach_status_counts" in summary and (out / "audit.jsonl").read_text().strip()
+    store = source.store
+
+    def saved():
+        return {k: store.get(AS_OF, Kind.MANDATE_RECONCILIATION, k) for k in store.keys(AS_OF, Kind.MANDATE_RECONCILIATION)}
+
+    first = saved()
+    assert set(first) == {"CL-0007", "CL-0001"}
+    MandateReconciliation.model_validate_json(first["CL-0007"])
+    assert json.loads(first["CL-0001"])["status"] == "insufficient_data"  # no persisted report in this fixture
+    summary = get_summary(store, AS_OF, "mandate-reconcile")
+    assert summary["clients"] == 2 and "breach_status_counts" in summary and read_audit(store, AS_OF, "mandate-reconcile")
     assert main(args) == 0
-    assert first == {p.name: p.read_bytes() for p in out.glob("*.json")}
+    assert first == saved()
     assert "2 mandate reconciliations written" in capsys.readouterr().out
 
 

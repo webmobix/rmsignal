@@ -5,7 +5,6 @@ A unit whose stored result has the same input hash is skipped without a model ca
 as soon as it exists (a rerun after an interruption does only the missing units) and a failing unit never stops the others."""
 
 import argparse
-import json
 import sys
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -28,11 +27,15 @@ from rm_dashboard.scenarios.inputs import load_portfolio_inputs, rollup_inputs_h
 from rm_dashboard.scenarios.rollup_agent import produce_client_rollup, produce_rm_rollup
 from rm_dashboard.scenarios.store import ScenarioStore
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import ArtifactStore, as_store, check_writable, log_dir
+from rm_dashboard.store.summary import get_summary, put_summary
 from rm_dashboard.tools import ToolRegistry
 
+from .stage import add_store_args, data_source_problem, open_audit, store_from_args
 from .wiring import open_registry
 
 STATUSES = ("complete", "partial", "insufficient_data")
+STAGE = "scenarios"
 
 
 @dataclass
@@ -52,6 +55,8 @@ class ScenarioRunResult:
     """Units left as they were: same inputs, no force."""
     failures: list[Failure] = field(default_factory=list)
     rejected: list[str] = field(default_factory=list)
+    store: ArtifactStore | None = None
+    """Where the results were saved; ``out_dir`` is the local folder of the run log."""
 
     @property
     def untouched(self) -> bool:
@@ -68,7 +73,7 @@ def _failed_impact(scenario: ScenarioRecord, pid: str, client: str, as_of: date,
                            gaps=[Gap(kind="agent_error", description=f"{type(e).__name__}: {e}", subject=pid)])
 
 
-def run_scenarios(registry: ToolRegistry, *, as_of: date, reports_dir: Path, models: ModelFactory | None = None, engine: PolicyEngine | None = None,
+def run_scenarios(registry: ToolRegistry, *, as_of: date, store: ArtifactStore | str | Path, models: ModelFactory | None = None, engine: PolicyEngine | None = None,
                   settings: Settings | None = None, force: bool = False, scenario_ids: list[str] | None = None,
                   portfolio_ids: list[str] | None = None) -> ScenarioRunResult:
     settings = settings or registry.ctx.settings
@@ -76,14 +81,16 @@ def run_scenarios(registry: ToolRegistry, *, as_of: date, reports_dir: Path, mod
     engine = engine or MockPolicyEngine()
     repo = registry.ctx.repo
     model = settings.model_name
-    store = ScenarioStore(reports_dir)
-    catalogue = CatalogueStore(reports_dir).ensure_seeded()
+    artifacts = as_store(store)
+    check_writable(artifacts)
+    store = ScenarioStore(artifacts)
+    catalogue = CatalogueStore(artifacts).ensure_seeded()
     scenarios = [s for s in catalogue.scenarios if not scenario_ids or s.scenario_id in scenario_ids]
     unknown = sorted(set(scenario_ids or []) - {s.scenario_id for s in catalogue.scenarios})
     if unknown:
         raise ValueError(f"unknown scenario(s): {', '.join(unknown)}; the catalogue has {', '.join(s.scenario_id for s in catalogue.scenarios)}")
-    out_dir = store.run_dir(as_of)
-    result = ScenarioRunResult(as_of, out_dir, {}, rejected=catalogue.rejected)
+    out_dir = log_dir(artifacts, as_of, STAGE)
+    result = ScenarioRunResult(as_of, out_dir, {}, rejected=catalogue.rejected, store=artifacts)
     pf_frame = repo.portfolios(as_of=as_of).frame
     portfolios = [r for r in pf_frame.to_dicts()] if pf_frame.height else []
     all_pids = [p["portfolio_id"] for p in portfolios]
@@ -101,14 +108,12 @@ def run_scenarios(registry: ToolRegistry, *, as_of: date, reports_dir: Path, mod
     workers = max(1, settings.max_concurrency)
 
     with llm_logging("scenarios", out_dir) as llm:
-        audit_path = out_dir / "audit.jsonl"
         audit: AuditLog | None = None
 
         def the_audit() -> AuditLog:
             nonlocal audit
             if audit is None:  # the trail is append-only: a later run adds to it, nothing is ever removed
-                out_dir.mkdir(parents=True, exist_ok=True)
-                audit = AuditLog(audit_path)
+                audit = open_audit(artifacts, as_of, STAGE, resume=True)
             return audit
 
         def fail(unit: str, e: Exception) -> None:
@@ -234,15 +239,13 @@ def run_scenarios(registry: ToolRegistry, *, as_of: date, reports_dir: Path, mod
             rollups[s.scenario_id] = r
             result.produced["rollup"] += 1
 
-        result.summary = _summary(as_of, model, scenarios, vectors, impacts, client_results, rollups, result, audit_path.name)
+        result.summary = _summary(as_of, model, scenarios, vectors, impacts, client_results, rollups, result, f"audit/{STAGE}")
         result.summary["llm"] = llm.counts()
         if sum(result.produced.values()) or result.failures:  # something ran: the summary describes the state after it
-            summary_path = out_dir / "summary.json"
-            result.summary = _merge(summary_path, result.summary)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            summary_path.write_text(json.dumps(result.summary, indent=2))
-        elif (out_dir / "summary.json").is_file():
-            result.summary = json.loads((out_dir / "summary.json").read_text())
+            result.summary = _merge(get_summary(artifacts, as_of, STAGE), result.summary)
+            put_summary(artifacts, as_of, STAGE, result.summary)
+        elif (earlier := get_summary(artifacts, as_of, STAGE)) is not None:
+            result.summary = earlier
     return result
 
 
@@ -266,13 +269,9 @@ def _summary(as_of, model, scenarios, vectors, impacts, clients, rollups, result
             "failures": [{"unit": f.unit, "error": f.error} for f in result.failures], "rejected_scenarios": result.rejected}
 
 
-def _merge(path: Path, new: dict) -> dict:
+def _merge(old: dict | None, new: dict) -> dict:
     """A run limited to some scenarios keeps what an earlier run recorded for the others."""
-    if not path.is_file():
-        return new
-    try:
-        old = json.loads(path.read_text())
-    except json.JSONDecodeError:
+    if old is None:
         return new
     return {**new, "scenarios": {**(old.get("scenarios") or {}), **new["scenarios"]}}
 
@@ -285,7 +284,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--scenario", action="append", metavar="ID", help="scenario id; repeat or comma-separate (default: every scenario in the catalogue)")
     p.add_argument("--portfolio", action="append", metavar="ID", help="portfolio id; repeat or comma-separate (default: every portfolio)")
     p.add_argument("--db", help="seeded SQLite database (or set RM_DASHBOARD_DB)")
-    p.add_argument("--reports-dir", default="reports", help="folder holding <as-of>/scenarios/ and scenarios/catalogue.json (default: reports)")
+    add_store_args(p)
     p.add_argument("--concurrency", type=int, help="units processed in parallel (default: RM_MAX_CONCURRENCY or 2)")
     p.add_argument("--force", action="store_true", help="regenerate even when the inputs are the same")
     return p.parse_args(argv)
@@ -301,15 +300,17 @@ def main(argv: list[str] | None = None) -> int:
     settings = Settings.from_env()
     overrides = {k: v for k, v in (("db_path", args.db), ("max_concurrency", args.concurrency)) if v}
     settings = replace(settings, **overrides)
-    if not settings.db_path:
-        print("error: no database given: pass --db rm.db or set RM_DASHBOARD_DB", file=sys.stderr)
+    if (problem := data_source_problem(settings)) is not None:
+        print(f"error: {problem}", file=sys.stderr)
         return 2
-    if not Path(settings.db_path).is_file():
-        print(f"error: database not found: {settings.db_path} (create it with `rm-dashboard-seed --db {settings.db_path}`)", file=sys.stderr)
+    try:
+        store = store_from_args(args, settings)
+    except (ValueError, ImportError) as e:
+        print(f"error: {e}", file=sys.stderr)
         return 2
-    with open_registry(settings, with_peer=False, reports_dir=args.reports_dir) as registry:
+    with open_registry(settings, with_peer=False, artifacts=store) as registry:
         try:
-            result = run_scenarios(registry, as_of=args.as_of, reports_dir=Path(args.reports_dir), settings=settings, force=args.force,
+            result = run_scenarios(registry, as_of=args.as_of, store=store, settings=settings, force=args.force,
                                    scenario_ids=_ids(args.scenario), portfolio_ids=_ids(args.portfolio))
         except ValueError as e:
             print(f"error: {e}", file=sys.stderr)
@@ -317,11 +318,11 @@ def main(argv: list[str] | None = None) -> int:
     for msg in result.rejected:
         print(f"warning: {msg}", file=sys.stderr)
     if result.untouched:
-        print(f"scenarios for {args.as_of} already exist with the same inputs: unchanged ({result.out_dir})")
+        print(f"scenarios for {args.as_of} already exist with the same inputs: unchanged ({result.store.location})")
         return 0
     made = ", ".join(f"{n} {k}" for k, n in result.produced.items() if n) or "nothing new"
     kept = ", ".join(f"{n} {k}" for k, n in result.skipped.items() if n)
-    print(f"scenario results written to {result.out_dir}: {made}" + (f"; unchanged: {kept}" if kept else "") + f"; model: {settings.model_name}")
+    print(f"scenario results written to {result.store.location}: {made}" + (f"; unchanged: {kept}" if kept else "") + f"; model: {settings.model_name}")
     for f in result.failures:
         print(f"failed: {f.unit}: {f.error}", file=sys.stderr)
     return 1 if result.failures else 0

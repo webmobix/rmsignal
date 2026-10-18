@@ -10,6 +10,8 @@ from rm_dashboard.api import callsheet, create_app
 from rm_dashboard.mandate_reconciliation import BreachResult, MandateReconciliation, NoteQuote
 from rm_dashboard.runners import open_registry, run_batch
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import Kind, as_store
+from storehelp import mark_run
 
 AS_OF = date(2026, 8, 26)
 SECTIONS = ("performance", "mandate", "ownership", "bank_view", "events", "cash_credit", "conversation")
@@ -21,15 +23,14 @@ def run_dir(seeded_db, outlook_dir, tmp_path_factory):
     out = tmp_path_factory.mktemp("callsheet_reports")
     shutil.copytree(outlook_dir, out, dirs_exist_ok=True)
     with open_registry(Settings(db_path=str(seeded_db), max_concurrency=4)) as reg:
-        run_batch(reg, as_of=AS_OF, out_dir=out, client_ids=["CL-0001", "CL-0005", "CL-0007", "CL-0017"],
+        run_batch(reg, as_of=AS_OF, store=out, client_ids=["CL-0001", "CL-0005", "CL-0007", "CL-0017"],
                   models=lambda role: StubChatModel(role=role))
     return out
 
 
 def write_mandate(base, cid, results):
-    d = base / AS_OF.isoformat() / "mandate-reconciliation"
-    d.mkdir(exist_ok=True)
-    (d / f"{cid}.json").write_text(MandateReconciliation(client_id=cid, as_of=AS_OF, status="complete", results=results).model_dump_json())
+    as_store(base).put(AS_OF, Kind.MANDATE_RECONCILIATION, cid,
+                       MandateReconciliation(client_id=cid, as_of=AS_OF, status="complete", results=results).model_dump_json())
 
 
 @pytest.fixture
@@ -41,7 +42,7 @@ def env(seeded_db, run_dir, tmp_path):
                      status="client_directed", rationale="r", waiver_claimed=True,
                      notes=[NoteQuote(note_id="N-010", note_date=date(2026, 1, 22), quote=WAIVER)]),
         BreachResult(portfolio_id="PF-0009", kind="band", key="Fixed Income", evidence_id="ev_x", description="FI breach")])
-    (base / "2026-03-31").mkdir()  # a run folder for the earlier date, so the API accepts it
+    mark_run(base, "2026-03-31")  # a run for the earlier date, so the API accepts it
     return TestClient(create_app(seeded_db, base)), base
 
 
@@ -121,7 +122,7 @@ def test_notes_are_point_in_time_and_newest_first(env):
 
 def test_no_notes_is_not_a_gap(env):
     client, base = env
-    (base / "2026-01-01").mkdir()
+    mark_run(base, "2026-01-01")
     c = sheet(client, "PF-0001", "2026-01-01")["conversation"]
     assert c["notes"] == [] and c["note_total"] == 0 and c["gaps"] == []
 
@@ -138,7 +139,7 @@ def test_every_position_is_listed_and_missing_outlooks_are_explicit(env):
     j = sheet(client, "PF-0009")["bank_view"]
     assert [e["instrument_id"] for e in j["entries"]] == [h["instrument_id"] for h in detail["holdings"]]
     victim = j["entries"][0]["instrument_id"]
-    (base / "2026-08-26" / "outlook" / "instruments" / f"{victim}.json").unlink()
+    as_store(base).delete_prefix(AS_OF, Kind.OUTLOOK_INSTRUMENT, victim)
     j2 = sheet(client, "PF-0009")["bank_view"]
     e = next(x for x in j2["entries"] if x["instrument_id"] == victim)
     assert len(j2["entries"]) == len(j["entries"]) and e["outlook"] is None
@@ -151,12 +152,10 @@ def test_older_outlook_carries_its_own_date_and_market_views_are_unchanged(env):
     entry = next(x for x in j["entries"] if x["outlook"])
     iid = entry["instrument_id"]
     assert entry["outlook"]["older_than_as_of"] is False and entry["outlook"]["as_of"] == "2026-08-26"
-    older = base / "2026-06-30" / "outlook" / "instruments"
-    older.mkdir(parents=True, exist_ok=True)
-    src = base / "2026-08-26" / "outlook" / "instruments" / f"{iid}.json"
-    stored = src.read_text()
-    (older / f"{iid}.json").write_text(stored.replace('"as_of": "2026-08-26"', '"as_of": "2026-06-30"', 1))
-    src.unlink()
+    store = as_store(base)
+    stored = store.get(AS_OF, Kind.OUTLOOK_INSTRUMENT, iid)
+    store.put(date(2026, 6, 30), Kind.OUTLOOK_INSTRUMENT, iid, stored.replace('"as_of": "2026-08-26"', '"as_of": "2026-06-30"', 1))
+    store.delete_prefix(AS_OF, Kind.OUTLOOK_INSTRUMENT, iid)
     again = next(x for x in sheet(client, "PF-0009")["bank_view"]["entries"] if x["instrument_id"] == iid)
     assert again["outlook"]["older_than_as_of"] is True and again["outlook"]["as_of"] == "2026-06-30"
     import json
@@ -234,8 +233,8 @@ def test_open_actions_linked_to_the_portfolio(env, seeded_db):
 
     client, base = env
     with open_registry(Settings(db_path=str(seeded_db), max_concurrency=2)) as reg:
-        run_actions(reg, as_of=AS_OF, reports_dir=base, client_ids=["CL-0007"], models=lambda role: StubChatModel(role=role))
-        run_overview(reg, as_of=AS_OF, reports_dir=base, models=lambda role: StubChatModel(role=role))
+        run_actions(reg, as_of=AS_OF, store=base, client_ids=["CL-0007"], models=lambda role: StubChatModel(role=role))
+        run_overview(reg, as_of=AS_OF, store=base, models=lambda role: StubChatModel(role=role))
     j = sheet(client, "PF-0009")["mandate"]
     assert j["open_actions"], j
     assert any(a["category"] == "mandate_drift" and a["importance"] in ("high", "critical") for a in j["open_actions"])

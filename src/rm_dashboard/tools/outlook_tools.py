@@ -13,9 +13,9 @@ HOUSE_VIEW = "house_view"
 STALE_OUTLOOK = "stale_outlook"
 NO_MARKET_OUTLOOK = "no market outlook exists on or before as_of"
 NO_INSTRUMENT_OUTLOOK = "no earlier outlook exists for this instrument: this would be the first"
-NO_FOLDER_FOR = "no reports folder is configured: the outlook of {id} cannot be read; run rm-dashboard-outlook"
+NO_FOLDER_FOR = "no artifact store is configured: the outlook of {id} cannot be read; run rm-dashboard-outlook"
 NO_OUTLOOK_FOR = "no outlook exists for {id} on or before as_of; run rm-dashboard-outlook"
-NO_FOLDER = "no reports folder is configured: previous outlooks cannot be read"
+NO_FOLDER = "no artifact store is configured: previous outlooks cannot be read"
 FIRST = "no earlier market outlook exists: this would be the first outlook"
 
 
@@ -27,10 +27,10 @@ def view_summary(o: MarketOutlook) -> list[dict]:
 
 
 def previous_market(ctx: ToolContext, p: AsOfOnly):
-    prev = OutlookStore(ctx.reports_dir).previous_market(before=p.as_of) if ctx.reports_dir else None
+    prev = OutlookStore(ctx.artifacts).previous_market(before=p.as_of) if ctx.artifacts is not None else None
     if prev is None:
         return build_result(tool="outlook.previous_market", version="1", params=p, as_of=p.as_of, data=None,
-                            status="no_data", reason=NO_FOLDER if not ctx.reports_dir else FIRST)
+                            status="no_data", reason=NO_FOLDER if ctx.artifacts is None else FIRST)
     flag = QualityFlag(code=PRIOR_VIEW, message=f"previous market outlook of {prev.as_of}: a reference view, not evidence for a driver or risk")
     data = {"previous_as_of": prev.as_of.isoformat(), "inputs": prev.inputs.model_dump(mode="json"),
             "carried_forward_from": prev.carried_forward_from.isoformat() if prev.carried_forward_from else None,
@@ -46,11 +46,11 @@ def instrument_view_summary(o: InstrumentOutlook) -> dict | None:
 
 
 def outlook_market(ctx: ToolContext, p: AsOfOnly):
-    store = OutlookStore(ctx.reports_dir) if ctx.reports_dir else None
+    store = OutlookStore(ctx.artifacts) if ctx.artifacts is not None else None
     o = store.latest_market(not_after=p.as_of) if store else None
     if o is None:
         return build_result(tool="outlook.market", version="1", params=p, as_of=p.as_of, data=None, status="no_data",
-                            reason=NO_FOLDER if not ctx.reports_dir else NO_MARKET_OUTLOOK)
+                            reason=NO_FOLDER if ctx.artifacts is None else NO_MARKET_OUTLOOK)
     flags = [QualityFlag(code=HOUSE_VIEW, message=f"market outlook of {o.as_of}, horizon {o.views[0].horizon if o.views else 'n/a'}: "
                                                    "a forward-looking view of the bank, not a fact")]
     if o.as_of != p.as_of:
@@ -64,7 +64,7 @@ def outlook_market(ctx: ToolContext, p: AsOfOnly):
 
 
 def outlook_instrument(ctx: ToolContext, p: InstrumentParams):
-    store = OutlookStore(ctx.reports_dir) if ctx.reports_dir else None
+    store = OutlookStore(ctx.artifacts) if ctx.artifacts is not None else None
     o = store.latest_instrument(p.instrument_id, not_after=p.as_of) if store else None
     if o is None:
         return build_result(tool="outlook.instrument", version="1", params=p, as_of=p.as_of, data=None, status="no_data",
@@ -88,10 +88,10 @@ def outlook_instrument(ctx: ToolContext, p: InstrumentParams):
 
 
 def previous_instrument(ctx: ToolContext, p: InstrumentParams):
-    prev = OutlookStore(ctx.reports_dir).previous_instrument(p.instrument_id, before=p.as_of) if ctx.reports_dir else None
+    prev = OutlookStore(ctx.artifacts).previous_instrument(p.instrument_id, before=p.as_of) if ctx.artifacts is not None else None
     if prev is None:
         return build_result(tool="outlook.previous_instrument", version="1", params=p, as_of=p.as_of, data=None, status="no_data",
-                            reason=NO_FOLDER if not ctx.reports_dir else NO_INSTRUMENT_OUTLOOK)
+                            reason=NO_FOLDER if ctx.artifacts is None else NO_INSTRUMENT_OUTLOOK)
     flag = QualityFlag(code=PRIOR_VIEW, message=f"previous outlook of {prev.subject} dated {prev.as_of}: a reference view, not evidence for a driver or risk")
     data = {"previous_as_of": prev.as_of.isoformat(), "inputs": prev.inputs.model_dump(mode="json"),
             "carried_forward_from": prev.carried_forward_from.isoformat() if prev.carried_forward_from else None,

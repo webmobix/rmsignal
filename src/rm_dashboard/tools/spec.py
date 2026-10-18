@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from rm_dashboard.domain import ToolResult
 from rm_dashboard.pit import PitRepository
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import ArtifactStore, as_store
 
 VERSION = "1"
 
@@ -53,8 +54,12 @@ class ToolContext:
     peers: dict[str, Any] = field(default_factory=dict)  # name -> peer agent client (``ask`` method)
     run: Any = None
     agent: str = ""
-    reports_dir: Path | None = None
+    artifacts: ArtifactStore | None = None  # where generated artifacts live (outlooks, scenario results)
     store: Any = None  # the run's EvidenceStore, filled in per call by the toolbox
+
+    def __post_init__(self) -> None:
+        if isinstance(self.artifacts, (str, Path)):  # a folder or file path names a SQLite store
+            self.artifacts = as_store(self.artifacts)
 
 
 @dataclass(frozen=True)

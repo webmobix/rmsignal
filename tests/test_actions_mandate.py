@@ -14,9 +14,10 @@ from rm_dashboard.actions.rubric import MANDATE_FLOORS, MANDATE_STATUSES, MANDAT
 from rm_dashboard.agents import StubChatModel
 from rm_dashboard.domain import Computation, ToolResult
 from rm_dashboard.mandate_reconciliation import BreachResult, MandateReconciliation, NoteQuote
-from rm_dashboard.reportsource import FolderReportSource
+from rm_dashboard.reportsource import StoreReportSource
 from rm_dashboard.runners import open_registry, run_batch
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import Kind
 
 AS_OF = date(2026, 8, 26)
 REF = "PF-0009/band/Commodities"
@@ -104,7 +105,7 @@ def reg(seeded_db):
 @pytest.fixture(scope="module")
 def reports_dir(reg, tmp_path_factory):
     out = tmp_path_factory.mktemp("reports")
-    run_batch(reg, as_of=AS_OF, out_dir=out, client_ids=["CL-0001"], models=lambda role: StubChatModel(role=role))
+    run_batch(reg, as_of=AS_OF, store=out, client_ids=["CL-0001"], models=lambda role: StubChatModel(role=role))
     return out
 
 
@@ -112,14 +113,12 @@ def reports_dir(reg, tmp_path_factory):
 def source(reports_dir, tmp_path):
     dest = tmp_path / "reports"
     shutil.copytree(reports_dir, dest)
-    return FolderReportSource(dest)
+    return StoreReportSource(dest)
 
 
 def write_mandate(source, results, cid="CL-0001"):
-    d = source.run_dir(AS_OF) / "mandate-reconciliation"
-    d.mkdir(exist_ok=True)
     rec = MandateReconciliation(client_id=cid, as_of=AS_OF, status="complete", results=results)
-    (d / f"{cid}.json").write_text(rec.model_dump_json())
+    source.store.put(AS_OF, Kind.MANDATE_RECONCILIATION, cid, rec.model_dump_json())
 
 
 def mandate_actions(res):
@@ -184,10 +183,10 @@ def test_no_note_results_leave_actions_as_they_were(reg, source):
 def test_overview_rechecks_mandate_links(reg, source):
     from rm_dashboard.actions.contracts import ClientActions
     from rm_dashboard.overview.build import _links_broken
-    from rm_dashboard.overview.source import FolderOverviewSource
+    from rm_dashboard.overview.source import StoreOverviewSource
 
     write_mandate(source, [result("client_directed")])
-    src = FolderOverviewSource(source.base_dir)
+    src = StoreOverviewSource(source.store)
 
     def check(**kw):
         s = SourceRef(kind="mandate", ref=REF, evidence_ids=["ev_m"], mandate_status="client_directed", breach_kind="band")

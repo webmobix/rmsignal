@@ -18,7 +18,7 @@ from .writer import ROLE, Writer, header_for
 
 def _summarise(registry: ToolRegistry, store: ScenarioStore, models: ModelFactory, *, subject: str, as_of: date, task: str, header: str,
                figures: dict, fallback: str, direction: float, engine: PolicyEngine | None, audit: AuditLog | None) -> tuple[str, list[Gap]]:
-    registry = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=store.base_dir), registry.specs.values())
+    registry = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=store.store), registry.specs.values())
     run = RunContext(subject, as_of, engine=engine or MockPolicyEngine(), audit=audit or AuditLog())
     try:
         run.run_start(ROLE)

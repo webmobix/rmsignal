@@ -1,6 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from storehelp import mark_run
+
 from rm_dashboard.api import create_app
 
 def test_missing_reports_folder_names_the_path(seeded_db, tmp_path):
@@ -29,9 +31,9 @@ def test_without_reports_option_sources_still_work(seeded_db):
     assert c.get("/api/rm").status_code == 404
 
 
-def test_latest_is_newest_folder_not_the_clock(seeded_db, tmp_path):
-    for d in ("2026-03-31", "2026-08-26", "notes"):
-        (tmp_path / d).mkdir()
+def test_latest_is_newest_run_not_the_clock(seeded_db, tmp_path):
+    for d in ("2026-03-31", "2026-08-26"):
+        mark_run(tmp_path, d)
     c = TestClient(create_app(seeded_db, tmp_path))
     assert c.get("/api/as-of").json() == {"as_of_dates": ["2026-03-31", "2026-08-26"], "latest": "2026-08-26"}
     assert c.get("/api/rm?as_of=latest").json()["as_of"] == "2026-08-26"
@@ -39,7 +41,7 @@ def test_latest_is_newest_folder_not_the_clock(seeded_db, tmp_path):
 
 
 def test_unknown_and_invalid_as_of(seeded_db, tmp_path):
-    (tmp_path / "2026-08-26").mkdir()
+    mark_run(tmp_path, "2026-08-26")
     c = TestClient(create_app(seeded_db, tmp_path))
     r = c.get("/api/rm?as_of=2026-01-01")
     assert r.status_code == 404 and "2026-08-26" in r.json()["detail"]

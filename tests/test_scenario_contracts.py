@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from rm_dashboard.scenarios import SEED_SCENARIOS, CatalogueStore, ScenarioRecord
 from rm_dashboard.scenarios.catalogue import scenario_hash
+from rm_dashboard.store import GLOBAL, Kind
 from rm_dashboard.scenarios.channels import (
     fx_channel, instrument_channels, is_single_instrument_key, region_bucket, sector_channels, vocabulary,
 )
@@ -27,7 +28,7 @@ def test_fresh_store_lists_the_three_seeded_scenarios(tmp_path):
     cat = CatalogueStore(tmp_path).load()
     assert [s.name for s in cat.scenarios] == ["Gulf de-escalation", "Gulf deterioration", "Rates higher for longer"]
     assert all(s.horizon_months == 3 for s in cat.scenarios) and not cat.rejected
-    assert not CatalogueStore(tmp_path).path.exists()  # loading never writes
+    assert not CatalogueStore(tmp_path).exists() and not list(tmp_path.iterdir())  # loading never writes
 
 
 def test_seeded_mirrors_name_an_event_log_date():
@@ -46,8 +47,7 @@ def test_adding_a_scenario_from_text_keeps_the_seeds(tmp_path):
 
 def test_a_record_without_premise_is_rejected_and_the_rest_survive(tmp_path):
     store = CatalogueStore(tmp_path)
-    store.path.parent.mkdir(parents=True)
-    store.path.write_text(json.dumps({"scenarios": [
+    store.store.put(GLOBAL, Kind.SCENARIO_CATALOGUE, "catalogue", json.dumps({"scenarios": [
         {"scenario_id": "ok", "name": "Ok", "premise": "Fine."}, {"scenario_id": "bad", "name": "Bad"},
         {"scenario_id": "ok", "name": "Dup", "premise": "Again."}]}))
     cat = store.load()

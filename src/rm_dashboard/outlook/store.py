@@ -1,49 +1,31 @@
-"""Where outlooks live: ``<reports>/<as_of>/outlook/market.json`` with its evidence beside it. Other dates are never touched."""
+"""Where outlooks live: one market outlook and one outlook per instrument for each date, with their evidence, in the
+artifact store. Other dates are never touched."""
 
-import json
 from datetime import date
 from pathlib import Path
 
 from rm_dashboard.domain import ToolResult
+from rm_dashboard.store import ArtifactStore, Kind, as_store, read_model
+from rm_dashboard.store import evidence as ev
 
 from .contracts import InstrumentOutlook, MarketOutlook
 
-SUBDIR = "outlook"
+MARKET_KEY = "market"
 
 
 class OutlookStore:
-    def __init__(self, base_dir: str | Path):
-        self.base_dir = Path(base_dir)
-
-    def outlook_dir(self, as_of: date) -> Path:
-        return self.base_dir / as_of.isoformat() / SUBDIR
-
-    def market_path(self, as_of: date) -> Path:
-        return self.outlook_dir(as_of) / "market.json"
-
-    def market_evidence_path(self, as_of: date) -> Path:
-        return self.outlook_dir(as_of) / "evidence" / "market.json"
+    def __init__(self, store: ArtifactStore | str | Path):
+        self.store = as_store(store)
 
     def load_market(self, as_of: date) -> MarketOutlook | None:
-        p = self.market_path(as_of)
-        return MarketOutlook.model_validate_json(p.read_text()) if p.is_file() else None
+        return read_model(self.store, as_of, Kind.OUTLOOK_MARKET, MARKET_KEY, MarketOutlook)
 
     def load_market_evidence(self, as_of: date) -> list[ToolResult]:
-        p = self.market_evidence_path(as_of)
-        return [ToolResult.model_validate(x) for x in json.loads(p.read_text())] if p.is_file() else []
+        return ev.get_evidence(self.store, as_of, ev.OUTLOOK_MARKET, MARKET_KEY) or []
 
     def dates(self) -> list[date]:
         """As-of dates that have a market outlook, oldest first."""
-        out = []
-        if self.base_dir.is_dir():
-            for d in self.base_dir.iterdir():
-                try:
-                    day = date.fromisoformat(d.name)
-                except ValueError:
-                    continue
-                if (d / SUBDIR / "market.json").is_file():
-                    out.append(day)
-        return sorted(out)
+        return [d for d in self.store.dates() if self.store.keys(d, Kind.OUTLOOK_MARKET, MARKET_KEY)]
 
     def previous_market(self, before: date) -> MarketOutlook | None:
         """The latest market outlook with views whose as_of is strictly earlier than ``before`` (never a later one)."""
@@ -61,35 +43,17 @@ class OutlookStore:
         return None
 
     # ---- instruments -------------------------------------------------------------------
-    def instrument_path(self, as_of: date, instrument_id: str) -> Path:
-        return self.outlook_dir(as_of) / "instruments" / f"{instrument_id}.json"
-
-    def instrument_evidence_path(self, as_of: date, instrument_id: str) -> Path:
-        return self.outlook_dir(as_of) / "evidence" / "instruments" / f"{instrument_id}.json"
-
     def load_instrument(self, as_of: date, instrument_id: str) -> InstrumentOutlook | None:
-        p = self.instrument_path(as_of, instrument_id)
-        return InstrumentOutlook.model_validate_json(p.read_text()) if p.is_file() else None
+        return read_model(self.store, as_of, Kind.OUTLOOK_INSTRUMENT, instrument_id, InstrumentOutlook)
 
     def load_instrument_evidence(self, as_of: date, instrument_id: str) -> list[ToolResult]:
-        p = self.instrument_evidence_path(as_of, instrument_id)
-        return [ToolResult.model_validate(x) for x in json.loads(p.read_text())] if p.is_file() else []
+        return ev.get_evidence(self.store, as_of, ev.OUTLOOK_INSTRUMENT, instrument_id) or []
 
     def instrument_ids(self, as_of: date) -> list[str]:
-        d = self.outlook_dir(as_of) / "instruments"
-        return sorted(p.stem for p in d.glob("*.json")) if d.is_dir() else []
+        return self.store.keys(as_of, Kind.OUTLOOK_INSTRUMENT)
 
     def instrument_dates(self, instrument_id: str) -> list[date]:
-        out = []
-        if self.base_dir.is_dir():
-            for d in self.base_dir.iterdir():
-                try:
-                    day = date.fromisoformat(d.name)
-                except ValueError:
-                    continue
-                if self.instrument_path(day, instrument_id).is_file():
-                    out.append(day)
-        return sorted(out)
+        return [d for d in self.store.dates() if self.store.get(d, Kind.OUTLOOK_INSTRUMENT, instrument_id) is not None]
 
     def previous_instrument(self, instrument_id: str, before: date) -> InstrumentOutlook | None:
         """The latest outlook of the instrument with a view whose as_of is strictly earlier than ``before``."""
@@ -107,14 +71,11 @@ class OutlookStore:
                 return o
         return None
 
+    # ---- writing: evidence first, the outlook last, so a reader never sees an outlook whose evidence is missing --------------
     def save_instrument(self, outlook: InstrumentOutlook, evidence: list[ToolResult]) -> None:
-        self.instrument_evidence_path(outlook.as_of, outlook.subject).parent.mkdir(parents=True, exist_ok=True)
-        self.instrument_path(outlook.as_of, outlook.subject).parent.mkdir(parents=True, exist_ok=True)
-        self.instrument_path(outlook.as_of, outlook.subject).write_text(outlook.model_dump_json(indent=2))
-        self.instrument_evidence_path(outlook.as_of, outlook.subject).write_text(
-            json.dumps([e.model_dump(mode="json") for e in evidence], default=str))
+        ev.put_evidence(self.store, outlook.as_of, ev.OUTLOOK_INSTRUMENT, outlook.subject, evidence)
+        self.store.put(outlook.as_of, Kind.OUTLOOK_INSTRUMENT, outlook.subject, outlook.model_dump_json(indent=2))
 
     def save_market(self, outlook: MarketOutlook, evidence: list[ToolResult]) -> None:
-        self.market_evidence_path(outlook.as_of).parent.mkdir(parents=True, exist_ok=True)
-        self.market_path(outlook.as_of).write_text(outlook.model_dump_json(indent=2))
-        self.market_evidence_path(outlook.as_of).write_text(json.dumps([e.model_dump(mode="json") for e in evidence], default=str))
+        ev.put_evidence(self.store, outlook.as_of, ev.OUTLOOK_MARKET, MARKET_KEY, evidence)
+        self.store.put(outlook.as_of, Kind.OUTLOOK_MARKET, MARKET_KEY, outlook.model_dump_json(indent=2))

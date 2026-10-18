@@ -85,15 +85,16 @@ def test_every_tool_call_has_an_audit_record(registry):
         assert r.as_of == "2026-08-26" and r.input_hash
 
 
-def test_audit_is_append_only_and_hash_is_stable(tmp_path):
-    log = AuditLog(tmp_path / "audit.jsonl")
+def test_audit_is_append_only_and_hash_is_stable():
+    sunk = []
+    log = AuditLog(sink=lambda seq, rec: sunk.append((seq, rec)))
     a = log.append(run_id="r", kind="decision", agent="x", subject="s", as_of="2026-08-26", input_hash="h")
     log.append(run_id="r", kind="decision", agent="x", subject="s", as_of="2026-08-26", input_hash="h")
     assert [r.seq for r in log.records] == [1, 2]
     assert not hasattr(log, "delete") and not hasattr(log, "update")
     with pytest.raises(Exception):
         a.kind = "other"
-    assert len((tmp_path / "audit.jsonl").read_text().splitlines()) == 2
+    assert [seq for seq, _ in sunk] == [1, 2] and sunk[0][1]["subject"] == "s"
     from rm_dashboard.policy import input_hash
     assert input_hash({"a": 1, "b": 2}) == input_hash({"b": 2, "a": 1})
 

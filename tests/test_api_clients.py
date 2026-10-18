@@ -1,4 +1,9 @@
+import json
+
 import pytest
+from storehelp import saved
+
+from rm_dashboard.store import Kind
 
 
 def _client(api, cid):
@@ -8,10 +13,7 @@ def _client(api, cid):
 
 
 def _persisted_action_counts(reports_dir):
-    import json
-
-    files = (reports_dir / "2026-08-26" / "actions").glob("CL-*.json")
-    return {p.stem: len(json.loads(p.read_text())["actions"]) for p in files}
+    return {k: len(json.loads(body)["actions"]) for k, body in saved(reports_dir, "2026-08-26", Kind.ACTIONS).items()}
 
 
 def test_client_list_covers_the_whole_book(api, reports_dir):

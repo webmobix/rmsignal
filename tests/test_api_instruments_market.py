@@ -1,6 +1,9 @@
 import pytest
 
+from storehelp import mark_run, saved_json
+
 from rm_dashboard.api.market import CHANNEL_RULES, reach_for
+from rm_dashboard.store import Kind
 
 
 def test_every_instrument_is_listed_with_holdings_and_outlook_flag(api):
@@ -51,7 +54,7 @@ def test_unknown_instrument_is_404(api):
 def test_market_outlook_matches_the_persisted_file(api, reports_dir):
     import json
 
-    persisted = json.loads((reports_dir / "2026-08-26/outlook/market.json").read_text())
+    persisted = saved_json(reports_dir, "2026-08-26", Kind.OUTLOOK_MARKET, "market")
     j = api.get("/api/market-outlook").json()
     assert j["gaps"] == [] and j["outlook"]["summary"] == persisted["summary"]
     assert [v["segment"] for v in j["outlook"]["views"]] == [v["segment"] for v in persisted["views"]]
@@ -63,7 +66,7 @@ def test_market_outlook_missing_is_a_gap(seeded_db, tmp_path):
 
     from rm_dashboard.api import create_app
 
-    (tmp_path / "2026-08-26").mkdir()
+    mark_run(tmp_path, "2026-08-26")
     j = TestClient(create_app(seeded_db, tmp_path)).get("/api/market-outlook").json()
     assert j["outlook"] is None and j["gaps"]
 

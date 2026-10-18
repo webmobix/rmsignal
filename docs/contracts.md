@@ -51,7 +51,7 @@ Delivered by every run. A `Finding` must cite at least one evidence id.
 
 ## Later stages
 
-The stages after the batch read the persisted `Report` and write their own contracts under `reports/<as_of>/`. Every one is
+The stages after the batch read the stored `Report` and save their own contracts as artifacts for the date (file-style names below, such as `actions/<client>.json`, name the artifact: its kind and key, see [architecture.md](architecture.md)). Every one is
 always delivered (`complete`, `partial` or `insufficient_data`, with gaps) and carries the policy decisions of its run.
 Finding references (`CL-0001#f7`, `CL-0001/PF-0001#f3`) are 1-based positions in the report tree; evidence ids are copied by
 code from the finding they come from, never taken from a model.

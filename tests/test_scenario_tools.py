@@ -23,7 +23,7 @@ def stored(registry, tmp_path):
 
 
 def call(registry, reports, shared=None, scenario_id=SID, as_of=AS_OF, role="scenario_impact"):
-    reg = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=reports), registry.specs.values())
+    reg = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=reports), registry.specs.values())
     tb = reg.toolbox(role, ALLOWLISTS[role], store=shared or EvidenceStore())
     return tb.call("scenario.vector", {"scenario_id": scenario_id, "as_of": as_of})
 
@@ -50,9 +50,9 @@ def test_no_vector_or_no_folder_is_no_data_with_the_command_to_run(registry, sto
     assert call(registry, reports, scenario_id="no-such").status == "no_data"
     r = call(registry, reports, as_of=date(2026, 6, 30))
     assert r.status == "no_data" and "rm-dashboard-scenarios" in r.reason
-    reg = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=None), registry.specs.values())
+    reg = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=None), registry.specs.values())
     r = reg.toolbox("scenario_impact", ALLOWLISTS["scenario_impact"]).call("scenario.vector", {"scenario_id": SID, "as_of": AS_OF})
-    assert r.status == "no_data" and "no reports folder" in r.reason
+    assert r.status == "no_data" and "no artifact store" in r.reason
 
 
 def test_only_the_impact_writer_may_read_the_vector(registry):

@@ -10,6 +10,7 @@ from rm_dashboard.api import create_app
 from rm_dashboard.mandate_reconciliation import BreachResult, MandateReconciliation, NoteQuote
 from rm_dashboard.runners import open_registry, run_batch
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import Kind, as_store
 
 AS_OF = date(2026, 8, 26)
 WAIVER = "Client instructed an additional gold purchase. Suitability waiver on file."
@@ -19,14 +20,13 @@ WAIVER = "Client instructed an additional gold purchase. Suitability waiver on f
 def run_dir(seeded_db, tmp_path_factory):
     out = tmp_path_factory.mktemp("api_reports")
     with open_registry(Settings(db_path=str(seeded_db), max_concurrency=4)) as reg:
-        run_batch(reg, as_of=AS_OF, out_dir=out, client_ids=["CL-0001", "CL-0005", "CL-0007"], models=lambda role: StubChatModel(role=role))
+        run_batch(reg, as_of=AS_OF, store=out, client_ids=["CL-0001", "CL-0005", "CL-0007"], models=lambda role: StubChatModel(role=role))
     return out
 
 
 def write(base, cid, results, status="complete"):
-    d = base / AS_OF.isoformat() / "mandate-reconciliation"
-    d.mkdir(exist_ok=True)
-    (d / f"{cid}.json").write_text(MandateReconciliation(client_id=cid, as_of=AS_OF, status=status, results=results).model_dump_json())
+    as_store(base).put(AS_OF, Kind.MANDATE_RECONCILIATION, cid,
+                       MandateReconciliation(client_id=cid, as_of=AS_OF, status=status, results=results).model_dump_json())
 
 
 def breach(pid, kind, key, status, notes=(), waiver=False):

@@ -8,9 +8,10 @@ from rm_dashboard.agents import StubChatModel
 from rm_dashboard.domain import Report
 from rm_dashboard.reconciliation import Reconciliation, reconcile
 from rm_dashboard.reconciliation.guard import Note, guard_results
-from rm_dashboard.reportsource import FlatFinding, FolderReportSource, flatten
+from rm_dashboard.reportsource import FlatFinding, StoreReportSource, flatten
 from rm_dashboard.runners import open_registry, run_batch
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import Kind
 
 AS_OF = date(2026, 8, 26)
 EARLY = date(2026, 3, 31)
@@ -26,13 +27,13 @@ def reg(seeded_db):
 def reports_dir(reg, tmp_path_factory):
     out = tmp_path_factory.mktemp("reports")
     for d in (AS_OF, EARLY):
-        run_batch(reg, as_of=d, out_dir=out, client_ids=["CL-0001", "CL-0012"], models=lambda role: StubChatModel(role=role))
+        run_batch(reg, as_of=d, store=out, client_ids=["CL-0001", "CL-0012"], models=lambda role: StubChatModel(role=role))
     return out
 
 
 @pytest.fixture
 def source(reports_dir):
-    return FolderReportSource(reports_dir)
+    return StoreReportSource(reports_dir)
 
 
 def scripted(*results):
@@ -74,7 +75,7 @@ def test_client_without_notes_yields_empty_complete_result(reg, source):
 
 
 def test_missing_report_is_insufficient_data(reg, tmp_path):
-    rec = reconcile(reg, "CL-0001", as_of=AS_OF, source=FolderReportSource(tmp_path), model=StubChatModel(role="note_reconciler"))
+    rec = reconcile(reg, "CL-0001", as_of=AS_OF, source=StoreReportSource(tmp_path), model=StubChatModel(role="note_reconciler"))
     assert rec.status == "insufficient_data" and rec.results == [] and rec.gaps[0].kind == "no_data"
 
 
@@ -176,11 +177,11 @@ def named_source(reports_dir, tmp_path):
 
     dest = tmp_path / "reports"
     shutil.copytree(reports_dir, dest)
-    path = dest / AS_OF.isoformat() / "CL-0001.json"
-    doc = json.loads(path.read_text())
+    source = StoreReportSource(dest)
+    doc = json.loads(source.store.get(AS_OF, Kind.REPORT, "CL-0001"))
     doc["findings"][0]["claim"] = "Hartono Wijaya Kusuma holds the account. " + doc["findings"][0]["claim"]
-    path.write_text(json.dumps(doc))
-    return FolderReportSource(dest)
+    source.store.put(AS_OF, Kind.REPORT, "CL-0001", json.dumps(doc))
+    return source
 
 
 def test_names_are_pseudonymised_for_the_model(reg, reports_dir, tmp_path):
@@ -218,20 +219,24 @@ def test_model_input_goes_through_the_pii_checkpoint(reg, source):
 
 
 # ---- 4.1 CLI ---------------------------------------------------------------------------------------------
-def test_cli_writes_files_and_rerun_is_identical(seeded_db, reports_dir, capsys, monkeypatch):
+def test_cli_saves_artifacts_and_rerun_is_identical(seeded_db, reports_dir, capsys, monkeypatch):
     from rm_dashboard.runners.reconcile import main
 
     monkeypatch.delenv("RM_DASHBOARD_DB", raising=False)
     args = ["--as-of", "2026-08-26", "--db", str(seeded_db), "--reports-dir", str(reports_dir), "--clients", "CL-0001,CL-0017"]
     assert main(args) == 0
-    out = reports_dir / "2026-08-26" / "reconciliation"
-    first = {p.name: p.read_bytes() for p in out.glob("*.json")}
-    assert set(first) == {"CL-0001.json", "CL-0017.json", "summary.json"}
-    Reconciliation.model_validate_json(first["CL-0001.json"])
+    store = StoreReportSource(reports_dir).store
+
+    def saved():
+        return {k: store.get(AS_OF, Kind.RECONCILIATION, k) for k in store.keys(AS_OF, Kind.RECONCILIATION)}
+
+    first = saved()
+    assert set(first) == {"CL-0001", "CL-0017"} and store.get(AS_OF, Kind.RUN_SUMMARY, "reconcile")
+    Reconciliation.model_validate_json(first["CL-0001"])
     # CL-0017 has no persisted report in this fixture: delivered as insufficient_data, not an error
-    assert json.loads(first["CL-0017.json"])["status"] == "insufficient_data"
+    assert json.loads(first["CL-0017"])["status"] == "insufficient_data"
     assert main(args) == 0
-    assert first == {p.name: p.read_bytes() for p in out.glob("*.json")}
+    assert first == saved()
     text = capsys.readouterr().out
     assert "2 reconciliations written" in text and "CL-0001:" in text
 

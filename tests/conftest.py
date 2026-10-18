@@ -53,7 +53,7 @@ def outlook_dir(registry, tmp_path_factory):
     from rm_dashboard.runners.outlook import run_outlook
 
     d = tmp_path_factory.mktemp("outlooks")
-    run_outlook(registry, as_of=date(2026, 8, 26), reports_dir=d, models=lambda role: StubChatModel(role=role))
+    run_outlook(registry, as_of=date(2026, 8, 26), store=d, models=lambda role: StubChatModel(role=role))
     return d
 
 
@@ -64,7 +64,7 @@ def outlook_registry(registry, outlook_dir):
 
     from rm_dashboard.tools import ToolRegistry
 
-    return ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=outlook_dir))
+    return ToolRegistry(dataclasses.replace(registry.ctx, artifacts=outlook_dir))
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ def api_reports(seeded_db, tmp_path_factory) -> Path:
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
     from rm_dashboard.agents import StubChatModel
-    from rm_dashboard.reportsource import FolderReportSource, flatten
+    from rm_dashboard.reportsource import StoreReportSource, flatten
     from rm_dashboard.runners import open_registry, run_batch
     from rm_dashboard.runners.actions import run_actions
     from rm_dashboard.runners.outlook import run_outlook
@@ -122,9 +122,9 @@ def api_reports(seeded_db, tmp_path_factory) -> Path:
         return next(f for f in flat if re.search(pattern, f.claim) and (("/" in f.report_path) == portfolio))
 
     with open_registry(Settings(db_path=str(seeded_db), max_concurrency=4)) as reg:
-        run_outlook(reg, as_of=as_of, reports_dir=out, models=stub, instrument_ids=["SYN-EQ-0001", "SYN-CM-0401"])
-        run_batch(reg, as_of=as_of, out_dir=out, client_ids=clients, models=stub)
-        flat = flatten(FolderReportSource(out).report(as_of, "CL-0001"))
+        run_outlook(reg, as_of=as_of, store=out, models=stub, instrument_ids=["SYN-EQ-0001", "SYN-CM-0401"])
+        run_batch(reg, as_of=as_of, store=out, client_ids=clients, models=stub)
+        flat = flatten(StoreReportSource(out).report(as_of, "CL-0001"))
         kyc, conc, credit = (first(flat, r) for r in (r"KYC review is", r"largest single-name", r"LTV is"))
         pf_finding = next(f for f in flat if "/PF-0001" in f.report_path and f.evidence_ids)
         reconciliation = {"results": [
@@ -132,7 +132,7 @@ def api_reports(seeded_db, tmp_path_factory) -> Path:
              "rationale": "The note says the client wants less energy exposure but the report still shows a single-name concentration."},
             {"note_id": "N-002", "verdict": "consistent", "finding_refs": [pf_finding.ref],
              "rationale": "The report findings for the portfolio support what the note says."}]}
-        run_reconcile(reg, as_of=as_of, reports_dir=out, client_ids=["CL-0001"],
+        run_reconcile(reg, as_of=as_of, store=out, client_ids=["CL-0001"],
                       models=lambda role: FakeListChatModel(responses=[json.dumps(reconciliation)]))
         scripted = {"actions": [
             {"category": "compliance_kyc", "importance": "medium", "title": "Prepare the KYC review", "what": "Prepare the periodic review.",
@@ -145,10 +145,10 @@ def api_reports(seeded_db, tmp_path_factory) -> Path:
              "why": "The report shows the facility.", "refs": [credit.ref]},
             {"category": "client_contact", "importance": "low", "title": "Follow up on note N-001", "what": "Discuss the difference.",
              "why": "The note and the book disagree.", "refs": ["N-001"]}]}
-        run_actions(reg, as_of=as_of, reports_dir=out, client_ids=["CL-0001"],
+        run_actions(reg, as_of=as_of, store=out, client_ids=["CL-0001"],
                     models=lambda role: FakeListChatModel(responses=[json.dumps(scripted)]))
-        run_actions(reg, as_of=as_of, reports_dir=out, client_ids=clients[1:], models=stub)
-        run_overview(reg, as_of=as_of, reports_dir=out, models=stub)
+        run_actions(reg, as_of=as_of, store=out, client_ids=clients[1:], models=stub)
+        run_overview(reg, as_of=as_of, store=out, models=stub)
     return out
 
 
@@ -180,7 +180,7 @@ def scenario_reports(seeded_db, api_reports, tmp_path_factory) -> Path:
     out = tmp_path_factory.mktemp("scenario_run") / "reports"
     shutil.copytree(api_reports, out)
     with open_registry(Settings(db_path=str(seeded_db), max_concurrency=4), with_peer=False) as reg:
-        run_scenarios(reg, as_of=date(2026, 8, 26), reports_dir=out, models=lambda role: StubChatModel(role=role),
+        run_scenarios(reg, as_of=date(2026, 8, 26), store=out, models=lambda role: StubChatModel(role=role),
                       scenario_ids=["gulf-deterioration"])
     return out
 

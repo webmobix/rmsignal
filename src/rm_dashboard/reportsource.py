@@ -1,11 +1,12 @@
-"""Reads the persisted output of a batch run: reports, their evidence and stable finding references."""
+"""Reads the stored output of a batch run: reports, their evidence and stable finding references."""
 
-import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
 from rm_dashboard.domain import Report, ToolResult
+from rm_dashboard.store import ArtifactStore, Kind, as_store, read_model
+from rm_dashboard.store.evidence import REPORT, get_evidence
 
 
 @dataclass(frozen=True)
@@ -33,21 +34,21 @@ def flatten(report: Report) -> list[FlatFinding]:
     return out
 
 
-class FolderReportSource:
-    """``<base>/<as_of>/<client>.json`` and ``evidence/<client>.json`` as written by the batch runner."""
+class StoreReportSource:
+    """The reports and evidence of the batch runner, read from the artifact store."""
 
-    def __init__(self, base_dir: str | Path):
-        self.base_dir = Path(base_dir)
+    def __init__(self, store: ArtifactStore | str | Path):
+        self.store = as_store(store)
 
-    def run_dir(self, as_of: date) -> Path:
-        return self.base_dir / as_of.isoformat()
+    def location(self, as_of: date) -> str:
+        return f"{self.store.location} ({as_of})"
+
+    def client_ids(self, as_of: date) -> list[str]:
+        return self.store.keys(as_of, Kind.REPORT)
 
     def report(self, as_of: date, client_id: str) -> Report | None:
-        p = self.run_dir(as_of) / f"{client_id}.json"
-        return Report.model_validate_json(p.read_text()) if p.is_file() else None
+        return read_model(self.store, as_of, Kind.REPORT, client_id, Report)
 
     def evidence(self, as_of: date, client_id: str) -> dict[str, ToolResult] | None:
-        p = self.run_dir(as_of) / "evidence" / f"{client_id}.json"
-        if not p.is_file():
-            return None
-        return {r.evidence_id: r for r in (ToolResult.model_validate(x) for x in json.loads(p.read_text()))}
+        results = get_evidence(self.store, as_of, REPORT, client_id)
+        return None if results is None else {r.evidence_id: r for r in results}

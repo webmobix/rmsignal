@@ -1,7 +1,7 @@
-import json
 from datetime import date
 
 import pytest
+from storehelp import snapshot
 
 from rm_dashboard.agents import StubChatModel
 from rm_dashboard.runners import open_registry
@@ -10,6 +10,9 @@ from rm_dashboard.runners.scenarios import main, run_scenarios
 from rm_dashboard.scenarios import CatalogueStore, ScenarioRecord
 from rm_dashboard.scenarios.store import ScenarioStore
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import Kind
+from rm_dashboard.store.audit import read_audit
+from rm_dashboard.store.summary import get_summary
 
 AS_OF = date(2026, 8, 26)
 PFS = ["PF-0001", "PF-0002", "PF-0003"]  # CL-0001 has two portfolios, CL-0002 one
@@ -38,23 +41,28 @@ def reg(seeded_db):
 def run(reg, tmp_path, models=None, scenario="gulf-deterioration", portfolios=PFS, **kw):
     models = models or Models()
     ids = [scenario] if isinstance(scenario, str) else scenario
-    return run_scenarios(reg, as_of=AS_OF, reports_dir=tmp_path, models=models, scenario_ids=ids, portfolio_ids=portfolios, **kw), models
+    return run_scenarios(reg, as_of=AS_OF, store=tmp_path, models=models, scenario_ids=ids, portfolio_ids=portfolios, **kw), models
 
 
-def files(root):
-    return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file() and p.name not in ("audit.jsonl", "run.log")}
+def files(root, scenario=None):
+    """Everything saved, minus the audit trail (which only grows); optionally only one scenario's results."""
+    snap = snapshot(root, skip=(Kind.AUDIT,))
+    return {k: v for k, v in snap.items() if scenario is None or (k[1].startswith("scenario-") and k[2].split("/")[0] == scenario
+                                                                    and k[1] != "scenario-catalogue")}
 
 
-def test_a_run_writes_vector_impacts_roll_ups_evidence_summary_and_audit(reg, tmp_path):
+def test_a_run_saves_vector_impacts_roll_ups_evidence_summary_and_audit(reg, tmp_path):
     res, _ = run(reg, tmp_path)
-    d = tmp_path / "2026-08-26" / "scenarios"
-    sd = d / "gulf-deterioration"
-    for name in ("vector.json", "evidence/vector.json", "impacts/PF-0001.json", "impacts/PF-0003.json", "clients/CL-0001.json", "clients/CL-0002.json",
-                 "rollup.json"):
-        assert (sd / name).is_file(), name
-    assert (d / "summary.json").is_file() and (d / "audit.jsonl").read_text().strip() and (tmp_path / "scenarios" / "catalogue.json").is_file()
+    store = ScenarioStore(tmp_path).store
+    sid = "gulf-deterioration"
+    assert store.keys(AS_OF, Kind.SCENARIO_VECTOR) == [sid] and store.keys(AS_OF, Kind.SCENARIO_ROLLUP) == [sid]
+    assert store.keys(AS_OF, Kind.SCENARIO_IMPACT) == [f"{sid}/PF-0001", f"{sid}/PF-0002", f"{sid}/PF-0003"]
+    assert store.keys(AS_OF, Kind.SCENARIO_CLIENT) == [f"{sid}/CL-0001", f"{sid}/CL-0002"]
+    assert store.keys(AS_OF, Kind.EVIDENCE_INDEX, f"scenario-vector/{sid}")
+    assert get_summary(store, AS_OF, "scenarios") and read_audit(store, AS_OF, "scenarios") and CatalogueStore(tmp_path).exists()
+    assert not [p for p in tmp_path.rglob("*.json")]  # no per-artifact files
     assert res.produced == {"vector": 1, "impact": 3, "client": 2, "rollup": 1} and not res.failures
-    s = json.loads((d / "summary.json").read_text())
+    s = get_summary(store, AS_OF, "scenarios")
     assert s["model"] == "stub" and s["scenarios"]["gulf-deterioration"]["impacts"]["count"] == 3 and s["scenarios"]["gulf-deterioration"]["vector"]["status"] == "complete"
     roll = ScenarioStore(tmp_path).load_rollup(AS_OF, "gulf-deterioration")
     assert roll.coverage.computed == 2 and roll.coverage.total == 20 and roll.status == "partial" and roll.rm_id == "RM-SG-014"
@@ -62,9 +70,9 @@ def test_a_run_writes_vector_impacts_roll_ups_evidence_summary_and_audit(reg, tm
 
 def test_the_audit_lists_run_start_and_tool_calls(reg, tmp_path):
     res, _ = run(reg, tmp_path)
-    kinds = {json.loads(l)["kind"] for l in (res.out_dir / "audit.jsonl").read_text().splitlines()}
-    assert {"decision", "tool_call"} <= kinds
-    decisions = {json.loads(l).get("detail", {}).get("checkpoint") for l in (res.out_dir / "audit.jsonl").read_text().splitlines()}
+    trail = read_audit(res.store, AS_OF, "scenarios")
+    assert {"decision", "tool_call"} <= {r["kind"] for r in trail}
+    decisions = {r.get("detail", {}).get("checkpoint") for r in trail}
     assert "request_entitlement" in decisions
 
 
@@ -93,25 +101,25 @@ def test_an_edited_premise_regenerates_the_vector_and_every_dependent_impact(reg
 
 def test_adding_a_scenario_from_text_runs_only_that_scenario(reg, tmp_path):
     run(reg, tmp_path)
-    before = files(tmp_path / "2026-08-26" / "scenarios" / "gulf-deterioration")
+    before = files(tmp_path, "gulf-deterioration")
     CatalogueStore(tmp_path).add(ScenarioRecord(scenario_id="taiwan-strait", name="Taiwan Strait", premise="Shipping lanes around Taiwan close."))
     res, _ = run(reg, tmp_path, scenario=["gulf-deterioration", "taiwan-strait"])
     assert res.produced == {"vector": 1, "impact": 3, "client": 2, "rollup": 1}
-    assert files(tmp_path / "2026-08-26" / "scenarios" / "gulf-deterioration") == before
+    assert files(tmp_path, "gulf-deterioration") == before
     assert ScenarioStore(tmp_path).scenario_ids(AS_OF) == ["gulf-deterioration", "taiwan-strait"]
-    s = json.loads((tmp_path / "2026-08-26" / "scenarios" / "summary.json").read_text())
+    s = get_summary(ScenarioStore(tmp_path).store, AS_OF, "scenarios")
     assert set(s["scenarios"]) == {"gulf-deterioration", "taiwan-strait"}
 
 
 def test_an_interrupted_run_resumes_with_only_the_missing_units(reg, tmp_path):
     run(reg, tmp_path)
-    sd = tmp_path / "2026-08-26" / "scenarios" / "gulf-deterioration"
-    (sd / "impacts" / "PF-0002.json").unlink()
-    (sd / "clients" / "CL-0001.json").unlink()
-    (sd / "rollup.json").unlink()
+    store = ScenarioStore(tmp_path).store
+    store.delete_prefix(AS_OF, Kind.SCENARIO_IMPACT, "gulf-deterioration/PF-0002")
+    store.delete_prefix(AS_OF, Kind.SCENARIO_CLIENT, "gulf-deterioration/CL-0001")
+    store.delete_prefix(AS_OF, Kind.SCENARIO_ROLLUP, "gulf-deterioration")
     res, _ = run(reg, tmp_path)
     assert res.produced == {"impact": 1, "client": 1, "rollup": 1} and res.skipped["vector"] == 1 and res.skipped["impact"] == 2
-    assert (sd / "impacts" / "PF-0002.json").is_file() and (sd / "rollup.json").is_file()
+    assert store.get(AS_OF, Kind.SCENARIO_IMPACT, "gulf-deterioration/PF-0002") and store.get(AS_OF, Kind.SCENARIO_ROLLUP, "gulf-deterioration")
 
 
 def test_one_failing_unit_does_not_stop_the_others(reg, tmp_path, monkeypatch):
@@ -129,7 +137,7 @@ def test_one_failing_unit_does_not_stop_the_others(reg, tmp_path, monkeypatch):
     assert store.load_impact(AS_OF, "gulf-deterioration", "PF-0001").status != "insufficient_data"
     failed = store.load_impact(AS_OF, "gulf-deterioration", "PF-0003")
     assert failed.status == "insufficient_data" and "model gateway down" in failed.gaps[0].description
-    s = json.loads((res.out_dir / "summary.json").read_text())
+    s = get_summary(res.store, AS_OF, "scenarios")
     assert s["failures"][0]["unit"].endswith("PF-0003") and s["scenarios"]["gulf-deterioration"]["impacts"]["failed"] == ["PF-0003"]
     assert store.load_client(AS_OF, "gulf-deterioration", "CL-0001").status != "insufficient_data"
     monkeypatch.setattr(runner, "produce_portfolio_impact", real)
@@ -151,11 +159,11 @@ def test_filters_reject_unknown_ids(reg, tmp_path):
 
 
 def test_other_dates_are_never_touched(reg, tmp_path):
-    other = tmp_path / "2026-06-30" / "scenarios" / "x.txt"
-    other.parent.mkdir(parents=True)
-    other.write_text("keep")
+    store = ScenarioStore(tmp_path).store
+    other = date(2026, 6, 30)
+    store.put(other, Kind.SCENARIO_ROLLUP, "x", "keep")
     run(reg, tmp_path)
-    assert other.read_text() == "keep" and not (tmp_path / "2026-06-30" / "scenarios" / "summary.json").exists()
+    assert store.get(other, Kind.SCENARIO_ROLLUP, "x") == "keep" and not store.keys(other, Kind.RUN_SUMMARY)
 
 
 def test_command_line(seeded_db, tmp_path, capsys):

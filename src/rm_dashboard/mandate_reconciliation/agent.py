@@ -14,7 +14,7 @@ from rm_dashboard.llmlog import llm_config
 from rm_dashboard.policy import AuditLog, MockPolicyEngine, PolicyDenied, PolicyEscalated, PolicyEngine, RunContext
 from rm_dashboard.policy.engine import COMPLIANCE_CONTENT, EVIDENCE_PROVENANCE
 from rm_dashboard.reconciliation.guard import Note
-from rm_dashboard.reportsource import FolderReportSource
+from rm_dashboard.reportsource import StoreReportSource
 from rm_dashboard.tools import ALLOWLISTS, ToolRegistry
 
 from .contracts import BreachResult, MandateReconciliation
@@ -43,7 +43,7 @@ def build_input(client_id: str, as_of: date, breaches: list[Breach], notes: list
             f"{INPUT_MARKER}{json.dumps(payload, sort_keys=True)}")
 
 
-def mandate_reconcile(registry: ToolRegistry, client_id: str, *, as_of: date, source: FolderReportSource, model: BaseChatModel,
+def mandate_reconcile(registry: ToolRegistry, client_id: str, *, as_of: date, source: StoreReportSource, model: BaseChatModel,
                       engine: PolicyEngine | None = None, audit: AuditLog | None = None) -> MandateReconciliation:
     """Reconcile one client's breaches with its notes. Always returns a result; failures become gaps."""
     from rm_dashboard.agents.scope import register_people
@@ -59,7 +59,7 @@ def mandate_reconcile(registry: ToolRegistry, client_id: str, *, as_of: date, so
         if report is None or evidence is None:
             what = "report" if report is None else "evidence"
             gap = Gap(kind="no_data", subject=client_id,
-                      description=f"no persisted {what} for {client_id} at {as_of} in {source.run_dir(as_of)}")
+                      description=f"no persisted {what} for {client_id} at {as_of} in {source.location(as_of)}")
             return _finish(run, MandateReconciliation(status="insufficient_data", gaps=[gap], **base))
         breaches, gaps, managed = build_subjects(evidence)
         notes = load_notes(registry, run, client_id, as_of) if breaches else []

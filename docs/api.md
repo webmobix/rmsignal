@@ -5,18 +5,19 @@ Interactive documentation with every response schema is served at `/docs`; the O
 (used to generate the UI types) at `/openapi.json`.
 
 ```sh
-uv run rm-dashboard-serve --db rm.db --reports reports            # port 8000
-RM_DASHBOARD_DB=rm.db RM_DASHBOARD_REPORTS=reports uv run rm-dashboard-serve
+uv run rm-dashboard-serve --db rm.db --artifact-store sqlite:reports/artifacts.db   # port 8000
+RM_DASHBOARD_DB=rm.db RM_ARTIFACT_STORE=sqlite:reports/artifacts.db uv run rm-dashboard-serve
 ```
 
-`--reports` (default `reports`, or `$RM_DASHBOARD_REPORTS`) is the folder of persisted runs,
-`<reports>/<as_of>/...`. The server exits with a message naming the folder when it does not exist.
+`--artifact-store` (default `$RM_ARTIFACT_STORE`, else `sqlite:reports/artifacts.db`) says where the runs were saved;
+`--reports <folder>` (or `$RM_DASHBOARD_REPORTS`) is the older form naming the folder that holds `artifacts.db`. The server
+exits with a message naming the folder when it does not exist, and lists the valid backends for an unknown one.
 There is no CORS and no authentication: the UI reaches the API through a dev proxy or the same origin.
 
 ## Conventions
 
 - **`as_of`.** Every endpoint except `/api/sources` takes `?as_of=<ISO date>|latest` (default `latest`).
-  `latest` is the newest run folder under the reports folder; the wall clock is never read. An unknown
+  `latest` is the newest date that has artifacts in the store; the wall clock is never read. An unknown
   date answers 404 and lists the available dates; with no runs at all the data endpoints answer 404 and
   name the batch commands.
 - **Read-only.** Only GET exists. POST, PUT, PATCH and DELETE answer 405.
@@ -53,7 +54,7 @@ curl localhost:8000/api/rm
 | `GET /api/overview` | the persisted RM overview plus `client_rows` and `total_aum_usd` |
 | `GET /api/evidence/{evidence_id}` | the stored tool result and everything that cites it |
 
-`/api/overview` returns the overview of `reports/<as_of>/overview/<rm>.json` unchanged in content (summary, themes, ranked
+`/api/overview` returns the stored `overview` artifact of the RM unchanged in content (summary, themes, ranked
 `actions`, `by_category`, `clients_without_actions`, `gaps`). Each action additionally carries:
 
 - `client_aum_usd` and `wealth_band` of its client, so a chart needs no second request;
@@ -229,8 +230,8 @@ those instruments with the USD they hold. `reach` has `derived` (always true), `
 | `GET /api/clients/{client_id}/scenarios` | one result per catalogue scenario for the client |
 | `GET /api/scenarios/{scenario_id}/rollup` | the RM-book roll-up of one scenario; 404 for an unknown scenario |
 
-Scenarios are stored text (`reports/scenarios/catalogue.json`, seeded with three) and results are computed by
-`rm-dashboard-scenarios` and read from `reports/<as_of>/scenarios/`. Nothing is computed on a request. Names, premises and caveats
+Scenarios are stored text (the `scenario-catalogue` artifact, seeded with three) and results are computed by
+`rm-dashboard-scenarios` and read from the artifact store. Nothing is computed on a request. Names, premises and caveats
 come from the backend only.
 
 Every figure is computed by code from the client's holdings and a market **shock vector**: a best, likely and worst move per market

@@ -18,9 +18,15 @@ dependencies = [
     "uvicorn>=0.54.0",
 ]
 
+[project.optional-dependencies]
+firestore = [
+    "google-cloud-firestore>=2.19.0",
+]
+
 [project.scripts]
 rm-dashboard = "rm_dashboard:main"
 rm-dashboard-seed = "rm_dashboard.data.seed:main"
+rm-dashboard-load = "rm_dashboard.loader.cli:main"
 rm-dashboard-serve = "rm_dashboard.api.serve:main"
 rm-dashboard-analyse = "rm_dashboard.runners.analyse:main"
 rm-dashboard-reconcile = "rm_dashboard.runners.reconcile:main"

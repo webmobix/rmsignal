@@ -7,9 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 
-from ..data.datasource import (
-    SqliteDataSource, UnknownColumnError, UnknownTableError, entity_for,
-)
+from ..data.contract import UnknownColumnError, UnknownTableError, entity_for
 from ..data.schema import ENTITIES, ValueParseError, columns
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
@@ -22,7 +20,7 @@ _PAGING = {"limit", "offset"}
 @contextmanager
 def _datasource(request: Request):
     # Opened inside the endpoint so the sqlite connection stays in one thread.
-    ds = SqliteDataSource(request.app.state.db_path)
+    ds = request.app.state.open_data_source()
     try:
         yield ds
     except UnknownTableError as exc:

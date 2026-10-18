@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from rm_dashboard.domain import Finding, Report
 from rm_dashboard.reconciliation.contracts import NoteResult, Reconciliation
-from rm_dashboard.reportsource import FolderReportSource, flatten
+from rm_dashboard.reportsource import StoreReportSource, flatten
 
 
 def result(**kw):
@@ -42,5 +42,5 @@ def test_flatten_gives_stable_refs_for_nested_reports():
 
 
 def test_folder_source_missing_files_return_none(tmp_path):
-    src = FolderReportSource(tmp_path / "nope")
+    src = StoreReportSource(tmp_path / "nope")
     assert src.report(date(2026, 8, 26), "CL-0001") is None and src.evidence(date(2026, 8, 26), "CL-0001") is None

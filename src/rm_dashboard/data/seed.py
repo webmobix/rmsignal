@@ -6,65 +6,25 @@ Uses only the standard library and never imports the app entry point.
 """
 
 import argparse
-import csv
-import json
 import sqlite3
 import sys
 from pathlib import Path
 
 from . import schema
-from .schema import ENTITIES, Entity, ValueParseError
+from .dataset import DEFAULT_DATA_DIR, DatasetError, parse_dataset
+from .schema import ENTITIES, Entity
 
-DEFAULT_DATA_DIR = (
-    Path(__file__).resolve().parents[3] / "sample" / "singhacks-jb-wealth-intelligence" / "data"
-)
-
-
-class SeedError(Exception):
-    """The dataset could not be loaded."""
+SeedError = DatasetError
+"""The dataset could not be loaded."""
 
 
-def _read_rows(entity: Entity, data_dir: Path) -> list[dict]:
-    path = data_dir / entity.file
-    if not path.is_file():
-        raise SeedError(f"{entity.file}: file not found in {data_dir}")
-    if path.suffix == ".json":
-        try:
-            rows = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise SeedError(f"{entity.file}: invalid JSON: {exc}") from None
-        header = list(rows[0]) if rows else []
-        for i, row in enumerate(rows, start=1):
-            if set(row) != set(header):
-                raise SeedError(f"{entity.file}: row {i} has different keys from row 1")
-    else:
-        with path.open(newline="", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            header = list(reader.fieldnames or [])
-            rows = list(reader)
-    expected = [c.source for c in schema.columns(entity)]
-    if set(header) != set(expected) or len(header) != len(expected):
-        missing = sorted(set(expected) - set(header))
-        extra = sorted(set(header) - set(expected))
-        raise SeedError(f"{entity.file}: header mismatch (missing: {missing}, unexpected: {extra})")
-    return rows
-
-
-def _load(conn: sqlite3.Connection, entity: Entity, rows: list[dict]) -> int:
+def _load(conn: sqlite3.Connection, entity: Entity, records: list) -> int:
     cols = schema.columns(entity)
     sql = (
         f'INSERT INTO "{entity.table}" ({", ".join(chr(34) + c.name + chr(34) for c in cols)}) '
         f'VALUES ({", ".join("?" * len(cols))})'
     )
-    values = []
-    for n, row in enumerate(rows, start=1):
-        record = []
-        for c in cols:
-            try:
-                record.append(schema.to_storage(schema.parse_text(c, row[c.source])))
-            except ValueParseError as exc:
-                raise SeedError(f"{entity.file}: row {n}, column {c.source}: {exc}") from None
-        values.append(record)
+    values = [[schema.to_storage(getattr(rec, c.name)) for c in cols] for rec in records]
     try:
         conn.executemany(sql, values)
     except sqlite3.IntegrityError as exc:
@@ -75,7 +35,7 @@ def _load(conn: sqlite3.Connection, entity: Entity, rows: list[dict]) -> int:
 def seed(db_path: str | Path, data_dir: str | Path = DEFAULT_DATA_DIR, replace: bool = False) -> dict[str, int]:
     """Create the schema and load every dataset file; return rows loaded per table."""
     data_dir, db_path = Path(data_dir), Path(db_path)
-    parsed = {e.table: _read_rows(e, data_dir) for e in ENTITIES}  # fail before touching the db
+    parsed = parse_dataset(data_dir)  # fail on a bad file, cell or key before touching the db
     conn = sqlite3.connect(db_path, isolation_level=None)
     try:
         conn.execute("BEGIN")

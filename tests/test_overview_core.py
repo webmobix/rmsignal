@@ -9,9 +9,11 @@ from rm_dashboard.actions import Action, ClientActions, SourceRef
 from rm_dashboard.agents import StubChatModel
 from rm_dashboard.domain import Gap
 from rm_dashboard.overview import Overview, OverviewAction
-from rm_dashboard.overview.source import FolderOverviewSource, rms_at
+from rm_dashboard.overview.source import StoreOverviewSource, rms_at
 from rm_dashboard.runners import open_registry, run_batch
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import Kind, as_store
+from rm_dashboard.store.summary import get_summary
 
 AS_OF = date(2026, 8, 26)
 
@@ -25,7 +27,7 @@ def reg(seeded_db):
 @pytest.fixture(scope="module")
 def reports_dir(reg, tmp_path_factory):
     out = tmp_path_factory.mktemp("reports")
-    run_batch(reg, as_of=AS_OF, out_dir=out, client_ids=["CL-0001", "CL-0002", "CL-0003"], models=lambda role: StubChatModel(role=role))
+    run_batch(reg, as_of=AS_OF, store=out, client_ids=["CL-0001", "CL-0002", "CL-0003"], models=lambda role: StubChatModel(role=role))
     return out
 
 
@@ -58,26 +60,24 @@ def test_contract_enums_and_round_trip():
 
 # ---- 1.2 source -----------------------------------------------------------------------------------
 def write_actions(base, cid, **kw):
-    d = base / AS_OF.isoformat() / "actions"
-    d.mkdir(exist_ok=True)
     res = ClientActions(client_id=cid, as_of=AS_OF, status=kw.pop("status", "complete"), **kw)
-    (d / f"{cid}.json").write_text(res.model_dump_json())
+    as_store(base).put(AS_OF, Kind.ACTIONS, cid, res.model_dump_json())
     return res
 
 
-def test_folder_source_reads_actions_findings_and_handles_absence(base, tmp_path):
-    src = FolderOverviewSource(base)
-    assert not src.has_actions_folder(AS_OF) and src.client_actions(AS_OF, "CL-0001") is None
+def test_store_source_reads_actions_findings_and_handles_absence(base, tmp_path):
+    src = StoreOverviewSource(base)
+    assert not src.has_actions(AS_OF) and src.client_actions(AS_OF, "CL-0001") is None
     action = Action(title="t", what="w", why="y", category="compliance_kyc", importance="high",
                     sources=[SourceRef(kind="finding", ref="CL-0001#f1", report_path="CL-0001", evidence_ids=[])])
     written = write_actions(base, "CL-0001", actions=[action])
-    assert src.has_actions_folder(AS_OF) and src.client_actions(AS_OF, "CL-0001") == written
+    assert src.has_actions(AS_OF) and src.client_actions(AS_OF, "CL-0001") == written
     assert src.client_actions(AS_OF, "CL-0002") is None
     assert "CL-0001#f1" in src.findings(AS_OF, "CL-0001") and src.findings(AS_OF, "CL-0099") is None
     assert src.reconciliation(AS_OF, "CL-0001") is None
-    missing = FolderOverviewSource(tmp_path / "nope")
-    assert not missing.has_actions_folder(AS_OF) and missing.findings(AS_OF, "CL-0001") is None
-    assert missing.location(AS_OF).endswith("2026-08-26/actions")
+    missing = StoreOverviewSource(tmp_path / "nope")
+    assert not missing.has_actions(AS_OF) and missing.findings(AS_OF, "CL-0001") is None
+    assert "artifacts.db" in missing.location(AS_OF) and "2026-08-26" in missing.location(AS_OF)
 
 
 # ---- 1.3 scoping --------------------------------------------------------------------------------------
@@ -124,7 +124,7 @@ def test_ranking_importance_horizon_date_aum_client_title(base):
                                            client_action("same", "high", horizon="later", due=date(2026, 12, 1), ref="CL-0001#f3")])
     write_actions(base, "CL-0002", actions=[client_action("same", "high", horizon="later", due=date(2026, 12, 1), ref="CL-0002#f1", cid_path="CL-0002"),
                                            client_action("sooner", "high", horizon="within_30_days", due=date(2026, 9, 5), ref="CL-0002#f2", cid_path="CL-0002")])
-    ov = build_overview(rm_of("CL-0001", "CL-0002", aum={"CL-0001": 5.0, "CL-0002": 50.0}), AS_OF, FolderOverviewSource(base))
+    ov = build_overview(rm_of("CL-0001", "CL-0002", aum={"CL-0001": 5.0, "CL-0002": 50.0}), AS_OF, StoreOverviewSource(base))
     order = [(a.client_id, a.title) for a in ov.actions]
     assert order[0] == ("CL-0001", "crit")
     assert order[1] == ("CL-0002", "sooner")                  # same importance, nearer horizon
@@ -137,7 +137,7 @@ def test_ranking_importance_horizon_date_aum_client_title(base):
 def test_rerun_equality_and_content_not_rewritten(base):
     act = client_action("Concentration")
     write_actions(base, "CL-0001", actions=[act])
-    src = FolderOverviewSource(base)
+    src = StoreOverviewSource(base)
     a = build_overview(rm_of("CL-0001"), AS_OF, src)
     b = build_overview(rm_of("CL-0001"), AS_OF, src)
     assert a.model_dump_json() == b.model_dump_json()
@@ -149,7 +149,7 @@ def test_rerun_equality_and_content_not_rewritten(base):
 def test_by_category_groups_and_counts(base):
     write_actions(base, "CL-0001", actions=[client_action("a"), client_action("b", category="compliance_kyc", ref="CL-0001#f2"),
                                            client_action("c", ref="CL-0001#f3")])
-    ov = build_overview(rm_of("CL-0001"), AS_OF, FolderOverviewSource(base))
+    ov = build_overview(rm_of("CL-0001"), AS_OF, StoreOverviewSource(base))
     groups = {g.category: g for g in ov.by_category}
     assert groups["concentration_risk"].count == 2 and groups["compliance_kyc"].count == 1
     assert sum(g.count for g in ov.by_category) == len(ov.actions)
@@ -158,49 +158,47 @@ def test_by_category_groups_and_counts(base):
 
 def test_broken_finding_link_is_a_gap_and_the_action_stays(base):
     write_actions(base, "CL-0001", actions=[client_action("ok"), client_action("bad", ref="CL-0001#f999")])
-    ov = build_overview(rm_of("CL-0001"), AS_OF, FolderOverviewSource(base))
+    ov = build_overview(rm_of("CL-0001"), AS_OF, StoreOverviewSource(base))
     assert ov.status == "partial" and {a.title for a in ov.actions} == {"ok", "bad"}
     assert any(g.description.startswith("link_broken: CL-0001: CL-0001#f999") for g in ov.gaps)
 
 
 def test_valid_links_give_a_complete_overview(base):
-    from rm_dashboard.reportsource import FolderReportSource, flatten
+    from rm_dashboard.reportsource import StoreReportSource, flatten
 
-    flat = flatten(FolderReportSource(base).report(AS_OF, "CL-0001"))[0]
+    flat = flatten(StoreReportSource(base).report(AS_OF, "CL-0001"))[0]
     act = Action(title="t", what="w", why="y", category="compliance_kyc", importance="high",
                  sources=[SourceRef(kind="finding", ref=flat.ref, report_path=flat.report_path, evidence_ids=list(flat.evidence_ids))])
     write_actions(base, "CL-0001", actions=[act])
-    ov = build_overview(rm_of("CL-0001"), AS_OF, FolderOverviewSource(base))
+    ov = build_overview(rm_of("CL-0001"), AS_OF, StoreOverviewSource(base))
     assert ov.status == "complete" and ov.gaps == []
 
 
 def test_note_link_checked_against_reconciliation(base):
     from rm_dashboard.reconciliation import NoteResult, Reconciliation
 
-    d = base / AS_OF.isoformat() / "reconciliation"
-    d.mkdir()
     rec = Reconciliation(client_id="CL-0001", as_of=AS_OF, status="complete", results=[
         NoteResult(note_id="N-001", note_date=date(2026, 1, 8), note_quote="q", verdict="contradicted", rationale="r")])
-    (d / "CL-0001.json").write_text(rec.model_dump_json())
+    as_store(base).put(AS_OF, Kind.RECONCILIATION, "CL-0001", rec.model_dump_json())
     note_action = lambda ref: Action(title="n", what="w", why="y", category="client_contact", importance="medium",
                                      sources=[SourceRef(kind="note", ref=ref)])
     write_actions(base, "CL-0001", actions=[note_action("N-001")])
-    assert build_overview(rm_of("CL-0001"), AS_OF, FolderOverviewSource(base)).gaps == []
+    assert build_overview(rm_of("CL-0001"), AS_OF, StoreOverviewSource(base)).gaps == []
     write_actions(base, "CL-0001", actions=[note_action("N-404")])
-    assert any("N-404" in g.description for g in build_overview(rm_of("CL-0001"), AS_OF, FolderOverviewSource(base)).gaps)
+    assert any("N-404" in g.description for g in build_overview(rm_of("CL-0001"), AS_OF, StoreOverviewSource(base)).gaps)
 
 
 def test_client_stage_gaps_are_carried_over(base):
     write_actions(base, "CL-0001", actions=[client_action("x")], status="partial", gaps=[Gap(kind="guard_removed", description="one removed")])
-    ov = build_overview(rm_of("CL-0001"), AS_OF, FolderOverviewSource(base))
+    ov = build_overview(rm_of("CL-0001"), AS_OF, StoreOverviewSource(base))
     assert ov.status == "partial" and any(g.kind == "guard_removed" and g.description == "CL-0001: one removed" and g.subject == "CL-0001" for g in ov.gaps)
 
 
 def test_no_client_outputs_gives_insufficient_data(base):
-    ov = build_overview(rm_of("CL-0001", "CL-0002"), AS_OF, FolderOverviewSource(base))
+    ov = build_overview(rm_of("CL-0001", "CL-0002"), AS_OF, StoreOverviewSource(base))
     assert ov.status == "insufficient_data" and ov.actions == [] and ov.gaps[0].kind == "no_data" and "actions" in ov.gaps[0].description
     assert {c.reason for c in ov.clients_without_actions} == {"actions_missing"}
-    nothing = build_overview(rm_of("CL-0099"), AS_OF, FolderOverviewSource(base))
+    nothing = build_overview(rm_of("CL-0099"), AS_OF, StoreOverviewSource(base))
     assert nothing.clients_without_actions[0].reason == "report_missing"
 
 
@@ -209,7 +207,7 @@ def test_coverage_cases(base):
     write_actions(base, "CL-0001", actions=[client_action("x")])                    # normal
     write_actions(base, "CL-0002", actions=[])                                      # complete, nothing to do
     write_actions(base, "CL-0003", actions=[], status="partial", gaps=[Gap(kind="agent_error", description="model failed")])
-    ov = build_overview(rm_of("CL-0001", "CL-0002", "CL-0003", "CL-0004", "CL-0099"), AS_OF, FolderOverviewSource(base))
+    ov = build_overview(rm_of("CL-0001", "CL-0002", "CL-0003", "CL-0004", "CL-0099"), AS_OF, StoreOverviewSource(base))
     reasons = {c.client_id: c.reason for c in ov.clients_without_actions}
     assert reasons == {"CL-0002": "no_action_needed", "CL-0003": "actions_missing", "CL-0004": "report_missing", "CL-0099": "report_missing"}
     cover = {a.client_id: a for a in ov.actions if a.origin == "coverage"}
@@ -221,7 +219,7 @@ def test_coverage_cases(base):
 
 def test_report_present_but_actions_file_absent_is_actions_missing(base):
     write_actions(base, "CL-0001", actions=[client_action("x")])
-    ov = build_overview(rm_of("CL-0001", "CL-0002"), AS_OF, FolderOverviewSource(base))  # CL-0002 has a report from the batch
+    ov = build_overview(rm_of("CL-0001", "CL-0002"), AS_OF, StoreOverviewSource(base))  # CL-0002 has a report from the batch
     assert [(c.client_id, c.reason) for c in ov.clients_without_actions] == [("CL-0002", "actions_missing")]
     assert any(a.origin == "coverage" and a.client_id == "CL-0002" and "Actions missing" in a.title for a in ov.actions)
 
@@ -229,7 +227,7 @@ def test_report_present_but_actions_file_absent_is_actions_missing(base):
 def test_every_client_is_accounted_for(base):
     write_actions(base, "CL-0001", actions=[client_action("x")])
     ids = ["CL-0001", "CL-0002", "CL-0003"]
-    ov = build_overview(rm_of(*ids), AS_OF, FolderOverviewSource(base))
+    ov = build_overview(rm_of(*ids), AS_OF, StoreOverviewSource(base))
     covered = {a.client_id for a in ov.actions} | {c.client_id for c in ov.clients_without_actions}
     assert covered == set(ids)
 
@@ -249,7 +247,7 @@ def summary_model(mode="normal"):
 def two_clients(base):
     write_actions(base, "CL-0001", actions=[client_action("Discuss concentration", "high"), client_action("Prepare KYC", "medium", "compliance_kyc", ref="CL-0001#f2")])
     write_actions(base, "CL-0002", actions=[client_action("Reduce exposure", "high", ref="CL-0002#f1", cid_path="CL-0002")])
-    return FolderOverviewSource(base)
+    return StoreOverviewSource(base)
 
 
 def test_summary_and_themes_added_actions_untouched(reg, two_clients):
@@ -289,10 +287,10 @@ def test_model_failure_keeps_actions_and_is_partial(reg, two_clients, mode):
 
 def test_no_actions_skips_the_model_call(reg, base):
     model = summary_model()
-    ov = create_overview(reg, rm_of("CL-0001"), as_of=AS_OF, source=FolderOverviewSource(base), model=model)
+    ov = create_overview(reg, rm_of("CL-0001"), as_of=AS_OF, source=StoreOverviewSource(base), model=model)
     assert ov.status == "insufficient_data" and model.calls == 0
     write_actions(base, "CL-0001", actions=[])
-    ov = create_overview(reg, rm_of("CL-0001"), as_of=AS_OF, source=FolderOverviewSource(base), model=model)
+    ov = create_overview(reg, rm_of("CL-0001"), as_of=AS_OF, source=StoreOverviewSource(base), model=model)
     assert ov.actions == [] and model.calls == 0 and ov.status == "complete"
 
 
@@ -311,13 +309,13 @@ def test_names_pseudonymised_for_the_model(reg, base):
                                                    sources=[SourceRef(kind="finding", ref="CL-0001#f1", report_path="CL-0001", evidence_ids=[])])])
     rm = RmInfo("RM-SG-014", "Priscilla Ong", (ClientInfo("CL-0001", "Hartono Wijaya Kusuma", 1.0),))
     model = summary_model()
-    ov = create_overview(reg, rm, as_of=AS_OF, source=FolderOverviewSource(base), model=model)
+    ov = create_overview(reg, rm, as_of=AS_OF, source=StoreOverviewSource(base), model=model)
     sent = json.dumps([[m.content for m in ms] for ms in model.seen])
     assert "Hartono" not in sent and "Kusuma" not in sent and "PERSON_" in sent
     assert ov.actions[0].client_name == "Hartono Wijaya Kusuma"  # delivered content keeps real names
     pseudo = "PERSON_" + __import__("hashlib").sha256(b"rm-dashboard:CL-0001").hexdigest()[:6].upper()
     reply = json.dumps({"summary": f"Start with {pseudo}.", "themes": []})
-    ov = create_overview(reg, rm, as_of=AS_OF, source=FolderOverviewSource(base), model=FakeListChatModel(responses=[reply]))
+    ov = create_overview(reg, rm, as_of=AS_OF, source=StoreOverviewSource(base), model=FakeListChatModel(responses=[reply]))
     assert ov.summary == "Start with Hartono Wijaya Kusuma."
 
 
@@ -330,7 +328,7 @@ def test_policy_denial_leaves_actions_and_marks_partial(reg, two_clients):
 
 
 # ---- 4.1 CLI ------------------------------------------------------------------------------------------------------
-def test_cli_writes_overview_and_rerun_is_byte_identical(seeded_db, base, capsys, monkeypatch):
+def test_cli_saves_overview_and_rerun_is_byte_identical(seeded_db, base, capsys, monkeypatch):
     from rm_dashboard.runners.actions import main as actions_main
     from rm_dashboard.runners.overview import main
 
@@ -338,18 +336,22 @@ def test_cli_writes_overview_and_rerun_is_byte_identical(seeded_db, base, capsys
     assert actions_main(["--as-of", "2026-08-26", "--db", str(seeded_db), "--reports-dir", str(base), "--clients", "CL-0001,CL-0002,CL-0003"]) == 0
     args = ["--as-of", "2026-08-26", "--db", str(seeded_db), "--reports-dir", str(base)]
     assert main(args) == 0
-    out = base / "2026-08-26" / "overview"
-    first = {p.name: p.read_bytes() for p in out.glob("*.json")}
-    assert set(first) == {"RM-SG-014.json", "summary.json"}
-    ov = Overview.model_validate_json(first["RM-SG-014.json"])
+    store = as_store(base)
+
+    def saved():
+        return {k: store.get(AS_OF, Kind.OVERVIEW, k) for k in store.keys(AS_OF, Kind.OVERVIEW)}
+
+    first = saved()
+    assert set(first) == {"RM-SG-014"} and get_summary(store, AS_OF, "overview")
+    ov = Overview.model_validate_json(first["RM-SG-014"])
     assert ov.rm_id == "RM-SG-014" and len(ov.clients) == 20 and ov.actions
     assert {a.client_id for a in ov.actions if a.origin == "coverage"} >= {"CL-0004", "CL-0020"}  # no report for those clients
     assert [a.rank for a in ov.actions] == list(range(1, len(ov.actions) + 1))
     assert main(args) == 0
-    assert first == {p.name: p.read_bytes() for p in out.glob("*.json")}
+    assert first == saved()
     text = capsys.readouterr().out
     assert "RM-SG-014:" in text and "1 overviews written" in text
-    assert main([*args, "--rm", "RM-UNKNOWN"]) == 0 and json.loads((out / "summary.json").read_text())["rms"] == 0
+    assert main([*args, "--rm", "RM-UNKNOWN"]) == 0 and get_summary(store, AS_OF, "overview")["rms"] == 0
 
 
 def test_cli_without_actions_delivers_insufficient_data(seeded_db, tmp_path, monkeypatch):
@@ -357,7 +359,7 @@ def test_cli_without_actions_delivers_insufficient_data(seeded_db, tmp_path, mon
 
     monkeypatch.delenv("RM_DASHBOARD_DB", raising=False)
     assert main(["--as-of", "2026-08-26", "--db", str(seeded_db), "--reports-dir", str(tmp_path)]) == 0
-    ov = Overview.model_validate_json((tmp_path / "2026-08-26" / "overview" / "RM-SG-014.json").read_text())
+    ov = Overview.model_validate_json(as_store(tmp_path).get(AS_OF, Kind.OVERVIEW, "RM-SG-014"))
     assert ov.status == "insufficient_data" and ov.actions == [] and ov.gaps
 
 

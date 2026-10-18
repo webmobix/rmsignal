@@ -6,7 +6,7 @@ import pytest
 
 from rm_dashboard.agents import StubChatModel, analyse
 from rm_dashboard.domain import Computation, ToolResult
-from rm_dashboard.reportsource import FolderReportSource
+from rm_dashboard.reportsource import StoreReportSource
 from rm_dashboard.runners import run_batch
 from rm_dashboard.runners.actions import run_actions
 from rm_dashboard.runners.overview import run_overview
@@ -138,7 +138,7 @@ def test_missing_outlook_files_in_an_existing_folder(make_scope, registry, tmp_p
     from rm_dashboard.policy import RunContext
     from rm_dashboard.tools import ToolRegistry
 
-    empty = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=tmp_path))
+    empty = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=tmp_path))
     r = analyse("portfolio_analyst", "PF-0001", RunScope(run=RunContext("PF-0001", AS_OF), registry=empty), Models())
     assert r.status == "partial" and sum(1 for g in r.gaps if g.subject == "outlook.instrument") == 2
     assert any("rm-dashboard-outlook" in g.description for g in r.gaps)
@@ -161,15 +161,15 @@ def test_an_earlier_outlook_is_used_with_its_date(make_scope):
 
 def test_the_stages_after_the_batch_work_without_instrument_children(outlook_registry, tmp_path):
     clients = ["CL-0001", "CL-0002", "CL-0003"]
-    batch = run_batch(outlook_registry, as_of=AS_OF, out_dir=tmp_path, client_ids=clients, models=lambda role: StubChatModel(role=role))
+    batch = run_batch(outlook_registry, as_of=AS_OF, store=tmp_path, client_ids=clients, models=lambda role: StubChatModel(role=role))
     for rep in batch.reports.values():
         assert all(not c.children for c in rep.children)
-    rec = run_reconcile(outlook_registry, as_of=AS_OF, reports_dir=tmp_path, client_ids=clients, models=lambda role: StubChatModel(role=role))
-    act = run_actions(outlook_registry, as_of=AS_OF, reports_dir=tmp_path, client_ids=clients, models=lambda role: StubChatModel(role=role))
-    ov = run_overview(outlook_registry, as_of=AS_OF, reports_dir=tmp_path, models=lambda role: StubChatModel(role=role))
+    rec = run_reconcile(outlook_registry, as_of=AS_OF, store=tmp_path, client_ids=clients, models=lambda role: StubChatModel(role=role))
+    act = run_actions(outlook_registry, as_of=AS_OF, store=tmp_path, client_ids=clients, models=lambda role: StubChatModel(role=role))
+    ov = run_overview(outlook_registry, as_of=AS_OF, store=tmp_path, models=lambda role: StubChatModel(role=role))
     assert set(rec.reconciliations) == set(act.results) == set(clients) and ov.overviews
     assert all(a.status in ("complete", "partial") for a in act.results.values())
-    src = FolderReportSource(tmp_path)
+    src = StoreReportSource(tmp_path)
     ev = src.evidence(AS_OF, "CL-0001")
     report = src.report(AS_OF, "CL-0001")
     assert {i for f in report.findings for i in f.evidence_ids} <= set(ev)
@@ -181,8 +181,8 @@ def test_the_batch_finds_the_outlooks_beside_its_reports(registry, outlook_dir, 
     import shutil
 
     shutil.copytree(outlook_dir, tmp_path, dirs_exist_ok=True)
-    assert registry.ctx.reports_dir is None
-    batch = run_batch(registry, as_of=AS_OF, out_dir=tmp_path, client_ids=["CL-0001"], models=lambda role: StubChatModel(role=role))
+    assert registry.ctx.artifacts is None
+    batch = run_batch(registry, as_of=AS_OF, store=tmp_path, client_ids=["CL-0001"], models=lambda role: StubChatModel(role=role))
     rep = batch.reports["CL-0001"]
     assert any(f.claim.startswith("The bank's market view as of") for f in rep.findings)
     assert any(f.claim.startswith("The bank's view of") for c in rep.children for f in c.findings)
@@ -190,7 +190,7 @@ def test_the_batch_finds_the_outlooks_beside_its_reports(registry, outlook_dir, 
 
 
 def test_the_batch_without_outlooks_is_partial_not_failed(registry, tmp_path):
-    batch = run_batch(registry, as_of=AS_OF, out_dir=tmp_path, client_ids=["CL-0001"], models=lambda role: StubChatModel(role=role))
+    batch = run_batch(registry, as_of=AS_OF, store=tmp_path, client_ids=["CL-0001"], models=lambda role: StubChatModel(role=role))
     rep = batch.reports["CL-0001"]
     assert rep.status == "partial" and any(g.subject == "outlook.market" for g in rep.gaps)
     assert not any(f.claim.startswith("The bank's") for f in rep.findings)

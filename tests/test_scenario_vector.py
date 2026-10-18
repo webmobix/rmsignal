@@ -119,4 +119,6 @@ def test_store_round_trip_touches_only_its_scenario_and_date(registry, tmp_path)
     assert store.load_vector(AS_OF, "gulf-deterioration") == v and store.load_vector(date(2026, 6, 30), "gulf-deterioration") is None
     assert [e.evidence_id for e in store.load_vector_evidence(AS_OF, "gulf-deterioration")] == [e.evidence_id for e in evidence]
     assert store.scenario_ids(AS_OF) == ["gulf-deterioration"]
-    assert sorted(p.name for p in tmp_path.rglob("*") if p.is_file()) == ["vector.json", "vector.json"]
+    assert sorted(p.name for p in tmp_path.rglob("*") if p.is_file()) == ["artifacts.db"]
+    store.save_vector(v.model_copy(update={"as_of": date(2026, 6, 30)}), [])
+    assert store.load_vector(AS_OF, "gulf-deterioration") == v and store.scenario_ids(date(2026, 6, 30)) == ["gulf-deterioration"]

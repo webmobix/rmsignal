@@ -52,7 +52,7 @@ def produce_shock_vector(registry: ToolRegistry, *, scenario: ScenarioRecord, as
                          model_name: str = "", engine: PolicyEngine | None = None,
                          audit: AuditLog | None = None) -> tuple[ShockVector, list[ToolResult]]:
     """The vector of ``scenario`` at ``as_of`` and the evidence it rests on. Always returns a vector; failures become gaps."""
-    registry = ToolRegistry(dataclasses.replace(registry.ctx, reports_dir=store.base_dir), registry.specs.values())
+    registry = ToolRegistry(dataclasses.replace(registry.ctx, artifacts=store.store), registry.specs.values())
     run = RunContext(scenario.scenario_id, as_of, engine=engine or MockPolicyEngine(), audit=audit or AuditLog())
     repo = registry.ctx.repo
     inputs_hash = current_hash(repo, scenario, as_of, model_name)

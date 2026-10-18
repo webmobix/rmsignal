@@ -1,6 +1,9 @@
 from datetime import date
 
+from storehelp import saved, saved_json
+
 from rm_dashboard.api.urgency import IMPORTANCE_BASE, urgency
+from rm_dashboard.store import Kind
 
 AS_OF = date(2026, 8, 26)
 
@@ -36,8 +39,9 @@ def test_due_term_fades_and_overdue_takes_the_full_term():
 def test_overview_committed_run(api, reports_dir):
     import json
 
-    persisted = sum(len(json.loads(p.read_text())["actions"]) for p in (reports_dir / "2026-08-26" / "actions").glob("CL-*.json"))
-    without = 20 - len(list((reports_dir / "2026-08-26" / "actions").glob("CL-*.json")))
+    actions = saved(reports_dir, "2026-08-26", Kind.ACTIONS)
+    persisted = sum(len(json.loads(body)["actions"]) for body in actions.values())
+    without = 20 - len(actions)
     r = api.get("/api/overview")
     assert r.status_code == 200
     o = r.json()
@@ -71,9 +75,9 @@ def test_source_refs_are_resolved(api):
 
 
 def test_evidence_with_citations(api, reports_dir):
-    from rm_dashboard.reportsource import FolderReportSource, flatten
+    from rm_dashboard.reportsource import StoreReportSource, flatten
 
-    flat = flatten(FolderReportSource(reports_dir).report(AS_OF, "CL-0001"))
+    flat = flatten(StoreReportSource(reports_dir).report(AS_OF, "CL-0001"))
     finding = next(f for f in flat if f.report_path == "CL-0001/PF-0001" and f.evidence_ids)
     ev_id = finding.evidence_ids[0]
     r = api.get(f"/api/evidence/{ev_id}")
@@ -93,7 +97,7 @@ def test_unknown_evidence_is_404(api):
 def test_market_evidence_cites_the_view(api, reports_dir):
     import json
 
-    views = json.loads((reports_dir / "2026-08-26/outlook/market.json").read_text())["views"]
+    views = saved_json(reports_dir, "2026-08-26", Kind.OUTLOOK_MARKET, "market")["views"]
     ev_id = views[0]["drivers"][0]["evidence_ids"][0]
     r = api.get(f"/api/evidence/{ev_id}")
     assert r.status_code == 200 and any(c["kind"] == "market_view" for c in r.json()["cited_by"])

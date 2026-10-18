@@ -1,6 +1,7 @@
 import json
 import shutil
 from datetime import date
+from pathlib import Path
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
@@ -11,9 +12,10 @@ from rm_dashboard.actions.guard import guard_actions
 from rm_dashboard.agents import StubChatModel
 from rm_dashboard.domain import Computation, ToolResult
 from rm_dashboard.reconciliation import NoteResult, Reconciliation
-from rm_dashboard.reportsource import FlatFinding, FolderReportSource, flatten
+from rm_dashboard.reportsource import FlatFinding, StoreReportSource, flatten
 from rm_dashboard.runners import open_registry, run_batch
 from rm_dashboard.settings import Settings
+from rm_dashboard.store import Kind
 
 AS_OF = date(2026, 8, 26)
 
@@ -27,7 +29,7 @@ def reg(seeded_db):
 @pytest.fixture(scope="module")
 def reports_dir(reg, tmp_path_factory):
     out = tmp_path_factory.mktemp("reports")
-    run_batch(reg, as_of=AS_OF, out_dir=out, client_ids=["CL-0001", "CL-0002", "CL-0003"], models=lambda role: StubChatModel(role=role))
+    run_batch(reg, as_of=AS_OF, store=out, client_ids=["CL-0001", "CL-0002", "CL-0003"], models=lambda role: StubChatModel(role=role))
     return out
 
 
@@ -35,7 +37,7 @@ def reports_dir(reg, tmp_path_factory):
 def source(reports_dir, tmp_path):
     dest = tmp_path / "reports"
     shutil.copytree(reports_dir, dest)
-    return FolderReportSource(dest)
+    return StoreReportSource(dest)
 
 
 def stub():
@@ -43,10 +45,8 @@ def stub():
 
 
 def write_reconciliation(source, cid, results):
-    d = source.run_dir(AS_OF) / "reconciliation"
-    d.mkdir(exist_ok=True)
     rec = Reconciliation(client_id=cid, as_of=AS_OF, status="complete", results=results)
-    (d / f"{cid}.json").write_text(rec.model_dump_json())
+    source.store.put(AS_OF, Kind.RECONCILIATION, cid, rec.model_dump_json())
 
 
 def note(nid="N-001", verdict="contradicted", evidence=("ev_x",)):
@@ -200,7 +200,7 @@ def test_model_failure_gives_partial_without_actions(reg, source, mode):
 
 
 def test_missing_report_is_insufficient_data(reg, tmp_path):
-    res = derive_actions(reg, "CL-0001", as_of=AS_OF, source=FolderReportSource(tmp_path), model=stub())
+    res = derive_actions(reg, "CL-0001", as_of=AS_OF, source=StoreReportSource(tmp_path), model=stub())
     assert res.status == "insufficient_data" and res.actions == []
 
 
@@ -219,12 +219,11 @@ def test_policy_denial_at_start_is_a_gap(reg, source):
 
 # ---- 3.1 privacy and prompt ---------------------------------------------------------------------------
 def test_names_are_pseudonymised_for_the_model_and_restored(reg, source):
-    path = source.run_dir(AS_OF) / "CL-0001.json"
-    doc = json.loads(path.read_text())
+    doc = json.loads(source.store.get(AS_OF, Kind.REPORT, "CL-0001"))
     for f in doc["findings"]:
         if "largest single-name" in f["claim"]:
             f["claim"] = "Hartono Wijaya Kusuma holds the largest single-name exposure in energy."
-    path.write_text(json.dumps(doc))
+    source.store.put(AS_OF, Kind.REPORT, "CL-0001", json.dumps(doc))
     model = stub()
     res = derive_actions(reg, "CL-0001", as_of=AS_OF, source=source, model=model)
     sent = json.dumps([[m.content for m in ms] for ms in model.seen])
@@ -244,19 +243,23 @@ def test_prompt_contains_the_rubric_and_all_categories():
 
 
 # ---- 4.1 CLI ----------------------------------------------------------------------------------------------
-def test_cli_writes_files_and_rerun_is_byte_identical(seeded_db, source, capsys, monkeypatch):
+def test_cli_saves_artifacts_and_rerun_is_byte_identical(seeded_db, source, capsys, monkeypatch):
     from rm_dashboard.runners.actions import main
 
     monkeypatch.delenv("RM_DASHBOARD_DB", raising=False)
-    args = ["--as-of", "2026-08-26", "--db", str(seeded_db), "--reports-dir", str(source.base_dir), "--clients", "CL-0001,CL-0017"]
+    args = ["--as-of", "2026-08-26", "--db", str(seeded_db), "--reports-dir", str(Path(source.store.path).parent), "--clients", "CL-0001,CL-0017"]
     assert main(args) == 0
-    out = source.run_dir(AS_OF) / "actions"
-    first = {p.name: p.read_bytes() for p in out.glob("*.json")}
-    assert set(first) == {"CL-0001.json", "CL-0017.json", "summary.json"}
-    ClientActions.model_validate_json(first["CL-0001.json"])
-    assert json.loads(first["CL-0017.json"])["status"] == "insufficient_data"  # no report in this fixture: delivered, not raised
+    store = source.store
+
+    def saved():
+        return {k: store.get(AS_OF, Kind.ACTIONS, k) for k in store.keys(AS_OF, Kind.ACTIONS)}
+
+    first = saved()
+    assert set(first) == {"CL-0001", "CL-0017"} and store.get(AS_OF, Kind.RUN_SUMMARY, "actions")
+    ClientActions.model_validate_json(first["CL-0001"])
+    assert json.loads(first["CL-0017"])["status"] == "insufficient_data"  # no report in this fixture: delivered, not raised
     assert main(args) == 0
-    assert first == {p.name: p.read_bytes() for p in out.glob("*.json")}
+    assert first == saved()
     assert "2 client action files written" in capsys.readouterr().out
 
 

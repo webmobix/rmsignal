@@ -12,6 +12,15 @@ class Settings:
     model_name: str = "stub"
     horizon_days: int = 365
     max_concurrency: int = 2
+    data_source: str | None = None
+    """``sqlite:<file>`` or ``firestore:<project>[/<database>]``; where the source tables are read from. Default: ``db_path``."""
+    artifact_store: str = "sqlite:reports/artifacts.db"
+    """``sqlite:<file or folder>`` or ``firestore:<project>[/<database>]``; where generated artifacts live."""
+
+    @property
+    def data_source_spec(self) -> str | None:
+        """The configured source-data backend: ``data_source``, else the SQLite file ``db_path``, else ``None``."""
+        return self.data_source or (f"sqlite:{self.db_path}" if self.db_path else None)
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -24,4 +33,6 @@ class Settings:
             model_name=e.get("RM_MODEL_NAME", d.model_name),
             horizon_days=int(e.get("RM_HORIZON_DAYS", d.horizon_days)),
             max_concurrency=int(e.get("RM_MAX_CONCURRENCY", d.max_concurrency)),
+            data_source=e.get("RM_DATA_SOURCE", d.data_source),
+            artifact_store=e.get("RM_ARTIFACT_STORE", d.artifact_store),
         )

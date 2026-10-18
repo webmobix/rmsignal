@@ -4,8 +4,7 @@ import hashlib
 import json
 import threading
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 def input_hash(payload: Any) -> str:
@@ -28,18 +27,20 @@ class AuditRecord:
 
 
 class AuditLog:
-    def __init__(self, path: str | Path | None = None):
+    def __init__(self, *, sink: Callable[[int, dict], None] | None = None, start_seq: int = 0):
+        """``sink(seq, record)`` receives each entry as it is appended (an artifact store); ``start_seq`` continues
+        the numbering of an earlier run of the same trail."""
         self._records: list[AuditRecord] = []
-        self._path = Path(path) if path else None
+        self._sink = sink
+        self._start = start_seq
         self._lock = threading.Lock()
 
     def append(self, **fields: Any) -> AuditRecord:
         with self._lock:
-            rec = AuditRecord(seq=len(self._records) + 1, **fields)
+            rec = AuditRecord(seq=self._start + len(self._records) + 1, **fields)
             self._records.append(rec)
-            if self._path:
-                with self._path.open("a") as fh:
-                    fh.write(json.dumps(asdict(rec), default=str) + "\n")
+            if self._sink:
+                self._sink(rec.seq, asdict(rec))
         return rec
 
     @property

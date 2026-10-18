@@ -172,7 +172,23 @@ flowchart LR
 `outlook` runs first because the client analysis reads its files. `analyse` writes the report and evidence; `reconcile`
 reads both; `mandate-reconcile` reads the evidence's computed mandate, position-limit and exclusion breaches and the notes; `actions` reads the report, the evidence and, when present, the note and mandate reconciliations; `overview` reads the actions.
 `scenarios` reads only the database and the scenario catalogue; it can run at any time and the API serves its files next to the rest.
-Each command takes `--as-of` (required) and writes under `reports/<as-of>/`.
+Each command takes `--as-of` (required) and saves its results in the artifact store (`reports/artifacts.db` by default; see README), under that date.
+
+**Artifact addresses.** Generated output is stored as artifacts addressed by `(as_of, kind, key)`, not as files. Where this document
+writes a path such as `reports/<as-of>/<client>.json` or `reconciliation/<client>.json`, read the artifact it names:
+
+| Older path | Kind | Key |
+|---|---|---|
+| `<client>.json` | `report` | `<client>` |
+| `evidence/<client>.json` | `evidence` (one record per tool result) and `evidence-index` | `<evidence_id>`; `report/<client>` |
+| `reconciliation/`, `mandate-reconciliation/`, `actions/<client>.json`; `overview/<rm_id>.json` | `reconciliation`, `mandate-reconciliation`, `actions`, `overview` | `<client>`; `<rm_id>` |
+| `outlook/market.json`; `outlook/instruments/<id>.json` | `outlook-market`; `outlook-instrument` | `market`; `<id>` |
+| `scenarios/<id>/vector.json`, `impacts/<pf>.json`, `clients/<cl>.json`, `rollup.json` | `scenario-vector`, `scenario-impact`, `scenario-client`, `scenario-rollup` | `<id>`; `<id>/<pf>`; `<id>/<cl>`; `<id>` |
+| `scenarios/catalogue.json` (no date) | `scenario-catalogue` | `catalogue` |
+| `summary.json` | `run-summary` | the stage: `analyse`, `reconcile`, `mandate-reconcile`, `actions`, `overview`, `outlook`, `scenarios` |
+| `audit.jsonl` | `audit` (one record per entry) | `<stage>/<seq>` |
+
+The backend is SQLite (`reports/artifacts.db`) or Firestore; code reaches it only through `rm_dashboard.store`.
 
 ## 2. Runners
 
@@ -182,7 +198,8 @@ Runners are the only callers of the batch agents. Each is a console script from 
 |---|---|---|---|---|---|
 | `rm-dashboard` | `rm_dashboard:main` | none | prints a greeting | none | none |
 | `rm-dashboard-seed` | `data.seed:main` | none | loads the CSV and JSON data into SQLite | `sample/.../data` | `rm.db` |
-| `rm-dashboard-serve` | `api.serve:main` | none | read-only HTTP API | `rm.db`, `reports/` | none |
+| `rm-dashboard-load` | `loader.cli:main` | none | `source`: the dataset files into SQLite or Firestore; `artifacts`: artifacts (or an older `reports/` folder) into SQLite or Firestore | dataset files, artifact store or `reports/` folder | `rm.db` or Firestore, `artifacts.db` or Firestore |
+| `rm-dashboard-serve` | `api.serve:main` | none | read-only HTTP API | `rm.db`, artifact store | none |
 | `rm-dashboard-outlook` | `runners.outlook:run_outlook` | `outlook_analyst` (market, then per instrument) | one market outlook, then one per held instrument, thread pool of `max_concurrency` | `rm.db`, earlier outlooks | `outlook/market.json`, `outlook/instruments/<id>.json`, evidence, `summary.json`, `audit.jsonl` (append-only) |
 | `rm-dashboard-scenarios` | `runners.scenarios:run_scenarios` | `scenario_analyst` (one per scenario), `scenario_impact` (per portfolio x scenario, then client and RM summaries) | units in a thread pool of `max_concurrency`; `--scenario`, `--portfolio` filters, `--force` | `rm.db`, `reports/scenarios/catalogue.json` | `scenarios/<id>/vector.json`, `impacts/<portfolio>.json`, `clients/<client>.json`, `rollup.json`, evidence, `scenarios/summary.json`, `scenarios/audit.jsonl` (append-only) |
 | `rm-dashboard-analyse` | `runners.batch:run_batch` | `relationship_analyst` (which delegates to `portfolio_analyst`) | one run per client, thread pool | `rm.db`, outlooks | `<client>.json`, `evidence/<client>.json`, `summary.json`, `audit.jsonl` |
@@ -193,14 +210,14 @@ Runners are the only callers of the batch agents. Each is a console script from 
 
 What every agent runner does the same way:
 
-1. Reads `Settings.from_env()` and the arguments (`--as-of` required, `--db` or `RM_DASHBOARD_DB`, `--reports-dir`,
+1. Reads `Settings.from_env()` and the arguments (`--as-of` required, `--db` or `RM_DASHBOARD_DB`, `--artifact-store` or `RM_ARTIFACT_STORE` (the older `--reports-dir` names the folder holding `artifacts.db`),
    `--concurrency`, which overrides `RM_MAX_CONCURRENCY`). The code default is 2; some `--help` texts say 4.
 2. Opens the tool registry through `wiring.open_registry`: SQLite data source, point-in-time repository and, unless
    disabled, the in-process **mock** KYC peer (section 6).
 3. Builds the model per role with `build_model(settings, role=...)`.
 4. Runs one subject per task in a thread pool of `max_concurrency` workers. A failure on one subject never stops the
    others: an exception becomes a `partial` result with an `agent_error` gap.
-5. Writes one JSON file per subject, a `summary.json` with status counts, and an `audit.jsonl`.
+5. Saves one artifact per subject, a run summary with status counts, and the audit trail, all in the artifact store.
 6. Is re-runnable: `analyse`, `reconcile`, `actions` and `overview` overwrite their files; `outlook` carries forward
    unchanged views and leaves an existing outlook of the same date alone unless `--force`; `scenarios` skips every unit whose input hash
    is unchanged, writes each unit as soon as it is done and resumes after an interruption.

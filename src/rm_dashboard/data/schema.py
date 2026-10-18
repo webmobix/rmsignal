@@ -177,3 +177,47 @@ def create_schema(conn: sqlite3.Connection) -> None:
         conn.execute(create_table_sql(e))
         for stmt in index_sql(e):
             conn.execute(stmt)
+
+
+# ---- Firestore documents -------------------------------------------------------------------------------------------
+_ID_ESCAPES = {"%": "%25", "/": "%2F", "|": "%7C"}
+
+
+def _escape_id(text: str) -> str:
+    return "".join(_ID_ESCAPES.get(ch, ch) for ch in text)
+
+
+def document_id(entity: Entity, record, seq: int) -> str:
+    """The Firestore document id: the primary key joined with ``|`` (``/`` is not allowed in an id), or ``row-<seq>`` for a table
+    without one (a row has no identity beyond its place in the file)."""
+    if not entity.primary_key:
+        return f"row-{seq:06d}"
+    return "|".join(_escape_id(str(getattr(record, k))) for k in entity.primary_key)
+
+
+def to_document(entity: Entity, record, seq: int) -> dict:
+    """The record as Firestore field values: dates as ISO text, booleans native, ``None`` as null, plus ``_seq`` for file order."""
+    doc = {}
+    for c in columns(entity):
+        v = getattr(record, c.name)
+        doc[c.name] = v.isoformat() if isinstance(v, date) else v
+    doc["_seq"] = seq
+    return doc
+
+
+def from_document(entity: Entity, doc: dict):
+    """The typed record a document holds (the inverse of ``to_document``)."""
+    values = []
+    for c in columns(entity):
+        v = doc.get(c.name)
+        if v is not None:
+            if c.type is date:
+                v = date.fromisoformat(v)
+            elif c.type is float:
+                v = float(v)
+            elif c.type is int:
+                v = int(v)
+            elif c.type is bool:
+                v = bool(v)
+        values.append(v)
+    return entity.model(*values)
